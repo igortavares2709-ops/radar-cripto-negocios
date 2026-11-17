@@ -131,7 +131,7 @@
 
 <script>
 window.rdFmt = {
-  usd: (v) => v == null ? '—' : (v >= 1000 ? 'US$ ' + d3.format(',.0f')(v) : 'US$ ' + d3.format(',.2f')(v)).replace(/,/g, '.'),
+  usd: (v) => v == null ? '—' : 'US$ ' + d3.format(v >= 1000 ? ',.0f' : ',.2f')(v).replace(/,/g, '_').replace(/\./g, ',').replace(/_/g, '.'),
   pct: (v) => v == null ? '' : (v > 0 ? '+' : '') + d3.format('.2f')(v).replace('.', ',') + '%',
   when: (s) => { const d = new Date(s); return isNaN(d) ? s : d.toLocaleString('pt-BR', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}); },
 };
