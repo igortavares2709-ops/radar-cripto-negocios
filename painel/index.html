@@ -45,6 +45,12 @@
 .rd-lv { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--cds-gap-md); font-variant-numeric: tabular-nums; font-size: var(--cds-font-size-body); }
 .rd-lv dt { color: var(--color-fg-muted); } .rd-lv dd { margin: 0; text-align: right; }
 .rd-warn { border: 1px solid var(--color-warn); border-radius: var(--cds-radius); padding: var(--cds-pad-sm) var(--cds-pad-md); font-size: var(--cds-font-size-caption); margin: 0 0 var(--cds-gap-md); max-width: 80ch; }
+.rd-placar { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--cds-gap-md); margin-bottom: var(--cds-gap-lg); }
+.rd-st { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--cds-font-size-caption); border: 1px solid var(--color-border-line); white-space: nowrap; }
+.rd-st[data-st="alvo2"], .rd-st[data-st="alvo1"] { color: var(--color-ok); border-color: var(--color-ok); }
+.rd-st[data-st="stop"] { color: var(--color-bad); border-color: var(--color-bad); }
+.rd-st[data-st="aberto"], .rd-st[data-st="alvo1 (aberto)"] { color: var(--color-warn); border-color: var(--color-warn); }
+.rd-num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .rd-empty { color: var(--color-fg-muted); }
 </style>
 
@@ -96,6 +102,28 @@
     <p class="rd-sub">Do analista técnico: tendência em 3 tempos gráficos (1D, 4H, 1H), médias móveis, RSI, MACD, ATR, suportes e resistências, funding e open interest dos perpétuos da OKX, cruzados com as notícias. Sinal "condicional" só vale se o gatilho acontecer.</p>
     <p class="rd-warn">Futuros com alavancagem podem zerar a margem rapidamente. Ninguém acerta sempre: use sempre o stop, arrisque no máximo 1–2% do capital por operação e trate isto como análise, não como recomendação.</p>
     <div class="rd-fut" data-draw="futuros" data-source="futuros"></div>
+  </section>
+
+  <section id="desempenho">
+    <h2 class="rd-h2">Histórico e desempenho dos sinais</h2>
+    <p class="rd-sub">Todo sinal LONG ou SHORT já publicado, conferido a cada rodada contra os candles de 1h da OKX. Regras: o condicional começa quando o preço toca a entrada e expira se não tocar em 48h; no alvo 1 sai metade e o stop vai para a entrada; stop e alvo no mesmo candle contam como stop; 1R é a distância entre a entrada e o stop.</p>
+    <div class="rd-placar" data-draw="placar" data-source="placar"></div>
+    <div class="rd-tablewrap">
+      <table class="rd-table" data-source="futuros" data-row-key="id">
+        <thead><tr>
+          <th data-field="at">Publicado</th>
+          <th data-field="ativo">Ativo</th>
+          <th data-field="direcao">Direção</th>
+          <th data-field="entrada" class="rd-num">Entrada</th>
+          <th data-field="stop" class="rd-num">Stop</th>
+          <th data-field="alvo1" class="rd-num">Alvo 1</th>
+          <th data-field="alvo2" class="rd-num">Alvo 2</th>
+          <th data-field="status">Situação</th>
+          <th data-field="resultado_r" class="rd-num">Resultado</th>
+        </tr></thead>
+        <tbody data-draw="historico-futuros"></tbody>
+      </table>
+    </div>
   </section>
 
   <section id="sinais">
@@ -307,6 +335,78 @@ dash.draw('futuros', (el) => {
     const t = document.createElement('p'); t.className = 'rd-text'; t.textContent = r.tese || ''; c.append(t);
     if (r.invalidacao) { const iv = document.createElement('p'); iv.className = 'rd-chg'; iv.textContent = 'Invalida se: ' + r.invalidacao; c.append(iv); }
     el.append(c);
+  });
+});
+const RD_FECHADOS = ['stop', 'alvo1', 'alvo2', 'encerrado no prazo'];
+dash.calc('placar', {
+  title: 'Placar dos sinais de futuros',
+  description: 'Conta os sinais LONG/SHORT por situação e soma o resultado em R dos que já foram encerrados.',
+  inputs: ['futuros'],
+  fn: (futuros) => {
+    const ops = futuros.filter((f) => f.direcao === 'LONG' || f.direcao === 'SHORT');
+    const fechados = ops.filter((f) => RD_FECHADOS.includes(f.status) && typeof f.resultado_r === 'number');
+    const acertos = fechados.filter((f) => f.resultado_r > 0).length;
+    const r_total = fechados.reduce((a, f) => a + f.resultado_r, 0);
+    return [{
+      publicados: ops.length,
+      acionados: ops.filter((f) => f.status && !['aguardando', 'expirado', 'invalido'].includes(f.status)).length,
+      encerrados: fechados.length,
+      abertos: ops.filter((f) => f.status === 'aberto' || f.status === 'alvo1 (aberto)').length,
+      expirados: ops.filter((f) => f.status === 'expirado').length,
+      taxa_acerto: fechados.length ? Math.round((acertos / fechados.length) * 100) : null,
+      r_total: Math.round(r_total * 100) / 100,
+    }];
+  },
+});
+
+dash.draw('placar', (el) => {
+  const p = dash.data('placar');
+  el.replaceChildren();
+  if (p.status !== 'ok' || !p.data || !p.data[0]) { el.textContent = '—'; return; }
+  const d = p.data[0];
+  const fmtR = (v) => (v > 0 ? '+' : '') + String(v).replace('.', ',') + 'R';
+  [
+    ['Sinais publicados', 'publicados', String(d.publicados), 'LONG ou SHORT'],
+    ['Acionados', 'acionados', String(d.acionados), d.abertos + ' em aberto'],
+    ['Encerrados', 'encerrados', String(d.encerrados), d.expirados + ' expiraram sem gatilho'],
+    ['Taxa de acerto', 'taxa_acerto', d.taxa_acerto == null ? '—' : d.taxa_acerto + '%', d.encerrados ? 'dos encerrados' : 'nenhum encerrado ainda'],
+    ['Resultado acumulado', 'r_total', d.encerrados ? fmtR(d.r_total) : '—', 'soma em múltiplos do risco'],
+  ].forEach(([lbl, f, v, note]) => {
+    const card = document.createElement('div'); card.className = 'rd-tile';
+    const l = document.createElement('span'); l.className = 'rd-lbl'; l.textContent = lbl;
+    const b = document.createElement('span'); b.className = 'rd-big'; b.textContent = v;
+    b.setAttribute('data-source', 'placar'); b.setAttribute('data-field', f); b.setAttribute('data-row', '0');
+    if (f === 'r_total' && d.encerrados) b.classList.add(d.r_total >= 0 ? 'rd-up' : 'rd-down');
+    const n = document.createElement('span'); n.className = 'rd-chg'; n.textContent = note;
+    card.append(l, b, n); el.append(card);
+  });
+});
+
+dash.draw('historico-futuros', (tb) => {
+  const rows = rdRows('futuros');
+  tb.replaceChildren();
+  if (!rows) return;
+  const ops = rows.filter((f) => f.direcao === 'LONG' || f.direcao === 'SHORT');
+  if (!ops.length) { const tr = tb.insertRow(); const td = tr.insertCell(); td.colSpan = 9; td.className = 'rd-empty'; td.textContent = 'Nenhum sinal LONG ou SHORT publicado ainda.'; return; }
+  ops.forEach((r) => {
+    const tr = tb.insertRow(); tr.dataset.key = encodeURIComponent(r.id);
+    tr.insertCell().textContent = rdFmt.when(r.at);
+    tr.insertCell().textContent = r.ativo || '';
+    const d = tr.insertCell(); d.textContent = (r.direcao || '') + (r.tipo === 'condicional' ? ' (cond.)' : '');
+    d.classList.add(r.direcao === 'LONG' ? 'rd-up' : 'rd-down');
+    ['entrada', 'stop', 'alvo1', 'alvo2'].forEach((f) => { const c = tr.insertCell(); c.className = 'rd-num'; c.textContent = rdNum(r[f]); });
+    const sc = tr.insertCell(); const pill = document.createElement('span'); pill.className = 'rd-st';
+    pill.dataset.st = r.status || 'aguardando'; pill.textContent = r.status || 'não conferido';
+    if (r.nota) pill.title = r.nota;
+    sc.append(pill);
+    const rc = tr.insertCell(); rc.className = 'rd-num';
+    if (typeof r.resultado_r === 'number') {
+      rc.textContent = (r.resultado_r > 0 ? '+' : '') + String(r.resultado_r).replace('.', ',') + 'R';
+      rc.classList.add(r.resultado_r > 0 ? 'rd-up' : r.resultado_r < 0 ? 'rd-down' : 'rd-chg');
+    } else if (typeof r.r_flutuante === 'number') {
+      rc.textContent = (r.r_flutuante > 0 ? '+' : '') + String(r.r_flutuante).replace('.', ',') + 'R aberto';
+      rc.classList.add('rd-chg');
+    } else rc.textContent = '—';
   });
 });
 </script>
