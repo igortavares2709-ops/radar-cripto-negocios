@@ -1,6 +1,6 @@
 # Radar Cripto & Negócios
 
-Uma equipe de 4 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos e as novas ideias de negócio pelo mundo, grava tudo num painel e envia um relatório por e-mail e push.
+Uma equipe de 5 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos, as novas ideias de negócio pelo mundo e as novas oportunidades de renda no mercado digital, grava tudo num painel e envia um relatório por e-mail e push.
 
 > Isto é análise automatizada, **não é recomendação de investimento**. Futuros com alavancagem podem zerar a margem.
 
@@ -11,7 +11,8 @@ Uma equipe de 4 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h 
 | Analista de mercado cripto | Preços, variações, fluxo dos ETFs, liquidações, moedas fora do normal, agenda macro |
 | Caçador de negócios | Rodadas de investimento e tendências (IA, DeFi, tokenização, pagamentos, stablecoins) e como fazer no Brasil |
 | Analista técnico de futuros | Análise gráfica em 3 tempos (1D, 4H, 1H) com EMAs 20/50/200, RSI, MACD, ATR, Bollinger, suportes e resistências, funding, open interest e long/short. Publica sinais LONG/SHORT, condicionais ou AGUARDAR, com entrada, stop, alvos, R:R e alavancagem máxima |
-| Gestor de risco / cético | Revisa os outros três, pode vetar sinais, dá nota de risco às ideias e define o nível: calmo, atenção ou alerta |
+| Caçador de renda digital | Novas formas de ganhar dinheiro na internet que dá para começar do Brasil (serviços com IA, micro-SaaS, economia de criadores, afiliados, e-commerce, freelas em dólar, monetização de plataformas). Para cada uma: por que agora, custo para começar, prazo até a primeira renda e os 3 primeiros passos |
+| Gestor de risco / cético | Revisa os outros quatro, pode vetar sinais e oportunidades, dá nota de risco às ideias e às oportunidades de renda, aponta golpes de "renda fácil" e define o nível: calmo, atenção ou alerta |
 
 ## Como uma rodada funciona
 
@@ -19,8 +20,8 @@ Uma equipe de 4 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h 
 2. **Dados:** CoinGecko (preços, dominância), alternative.me (Medo e Ganância), DeFiLlama (TVL) e OKX (candles e derivativos dos perpétuos).
 3. **Gráficos:** roda [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py).
 4. **Conferência:** roda [`scripts/avaliar_sinais.py`](scripts/avaliar_sinais.py), que confere cada sinal anterior contra os candles de 1h e grava a situação e o resultado.
-5. **Notícias:** só de fontes fortes. Cripto: CoinDesk, The Block, Decrypt, Bloomberg, CNBC, SEC, Farside. Startups: TechCrunch, Crunchbase News, Bloomberg, The Information. Brasil: Valor, InfoMoney, Banco Central, gov.br, NeoFeed, Brazil Journal. Cada notícia vai com a fonte e a data.
-6. **Grava** no painel e **envia o relatório** por e-mail e push.
+5. **Notícias:** só de fontes fortes. Cripto: CoinDesk, The Block, Decrypt, Bloomberg, CNBC, SEC, Farside. Startups: TechCrunch, Crunchbase News, Bloomberg, The Information. Brasil: Valor, InfoMoney, Banco Central, gov.br, NeoFeed, Brazil Journal. Renda digital: TechCrunch, The Verge, Business Insider, Reuters, Exame, Sebrae e os blogs oficiais das plataformas (YouTube, Shopify, Stripe). Cada notícia vai com a fonte e a data.
+6. **Grava** no painel e **envia o relatório** por e-mail e push. O e-mail traz a seção **RENDA DIGITAL** com as oportunidades novas da rodada.
 
 O passo a passo completo que cada rodada segue está em [`agentes/rodada.md`](agentes/rodada.md).
 
@@ -66,15 +67,19 @@ Usa só a biblioteca padrão do Python 3 e dados públicos da OKX (sem chave de 
 
 ## Painel
 
-[`painel/index.html`](painel/index.html) é a página do painel. Ela roda dentro de um Artifact do claude.ai e lê os dados de quatro coleções:
+[`painel/index.html`](painel/index.html) é a página do painel. Ela roda dentro de um Artifact do claude.ai e lê os dados de cinco coleções:
 
 - `data/radar/briefings`: um relatório por rodada
 - `data/radar/sinais`: sinais de mercado
 - `data/radar/ideias`: banco de ideias de negócio
+- `data/radar/renda`: oportunidades de renda digital (`titulo`, `modelo`, `plataforma`, `resumo`, `investimento`, `primeira_renda`, `habilidades`, `como_comecar`, `risco`, `fonte`)
 - `data/radar/futuros`: sinais de futuros, com `status`, `resultado_r`, `acionado_em` e `encerrado_em` preenchidos pela conferência
+
+Gráficos do painel: medidor de Medo e Ganância, minigráficos de preço nos cartões, BTC com sentimento, variação de BTC/ETH/SOL desde a primeira rodada, régua de preço (stop, entrada e alvos) em cada sinal de futuros, postura do analista por rodada, curva de resultado em R, e barras por tema, modelo de renda e nota de risco.
 
 ## Limitações honestas
 
 - Análise técnica não prevê o futuro: indicadores atrasam e falham em notícias inesperadas.
+- Prazos e valores das oportunidades de renda digital são estimativas a partir das fontes citadas, não garantias.
 - O analista técnico é um modelo de IA com regras disciplinadas, não um trader humano. Acompanhe o histórico de acertos antes de confiar.
 - Binance e Bybit bloqueiam a região dos servidores, por isso os dados de futuros vêm da OKX.
