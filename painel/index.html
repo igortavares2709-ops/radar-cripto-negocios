@@ -10,8 +10,8 @@
 .rd-take { font-size: var(--cds-font-size-heading); margin: 0; max-width: 70ch; line-height: 1.4; }
 .rd-meta { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
 .rd-gaugebox { display: grid; justify-items: center; gap: 2px; min-width: 200px; }
-.rd-gauge { width: 220px; max-width: 100%; height: 124px; }
-.rd-gaugenum { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 2.2rem; line-height: 1; font-variant-numeric: tabular-nums; margin-top: -48px; }
+.rd-gauge { width: 220px; max-width: 100%; height: 132px; }
+.rd-gaugenum { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 2.2rem; line-height: 1; font-variant-numeric: tabular-nums; margin-top: -58px; }
 .rd-gaugelbl { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); text-align: center; }
 .rd-nav { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); }
 .rd-nav a { font-size: var(--cds-font-size-caption); color: var(--color-fg); text-decoration: none; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--color-border-line); background: var(--color-panel); }
@@ -96,7 +96,7 @@
 #agente-negocios { --rd-accent: var(--color-ok); }
 #agente-renda { --rd-accent: var(--color-ok); }
 #agente-risco { --rd-accent: var(--color-bad); }
-@media print { .rd-nav { display: none; } }
+
 .rd-mesa { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-sm) var(--cds-pad-md); display: grid; gap: 4px; background: var(--color-bg); }
 .rd-mesa[data-dec="APROVADO"] { border-color: var(--color-ok); }
 .rd-mesa[data-dec="VETADO"] { border-color: var(--color-bad); }
@@ -106,6 +106,35 @@
 .rd-mesa[data-dec="VETADO"] .rd-mesadec { color: var(--color-bad); }
 .rd-mesanota { font-variant-numeric: tabular-nums; color: var(--color-fg-muted); }
 .rd-mesa .rd-text { font-size: var(--cds-font-size-caption); }
+/* Abas */
+.rd-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 6px; border-radius: 999px; border: 1px solid var(--color-border-line); background: var(--color-panel); box-shadow: 0 4px 14px color-mix(in srgb, var(--color-fg) 6%, transparent); }
+.rd-tabs::-webkit-scrollbar { display: none; }
+.rd-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); background: transparent; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; white-space: nowrap; }
+.rd-tab:hover { color: var(--color-fg); background: color-mix(in srgb, var(--color-fg) 6%, transparent); }
+.rd-tab[aria-selected="true"] { color: var(--color-bg); background: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.rd-tab:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.rd-badge { min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--color-fg-muted) 22%, transparent); color: inherit; }
+.rd-badge:empty { display: none; }
+.rd-badge[data-on="1"] { background: var(--color-ok); color: var(--color-bg); }
+.rd-panel { display: grid; gap: var(--cds-gap-xl); }
+.rd-panelintro { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-body); max-width: 80ch; }
+/* Resumo em 30 segundos */
+.rd-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--cds-gap-md); }
+.rd-q { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md); display: grid; gap: 6px; align-content: start; min-width: 0; }
+.rd-qq { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); letter-spacing: .04em; text-transform: uppercase; }
+.rd-qa { margin: 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 1.45rem; line-height: 1.2; text-wrap: balance; }
+.rd-qa[data-tone="ok"] { color: var(--color-ok); } .rd-qa[data-tone="bad"] { color: var(--color-bad); } .rd-qa[data-tone="warn"] { color: var(--color-warn); }
+.rd-qd { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.45; }
+.rd-golink { justify-self: start; font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.rd-golink:hover { color: var(--color-fg-muted); }
+/* Como ler */
+.rd-help { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); padding: var(--cds-pad-sm) var(--cds-pad-md); }
+.rd-help summary { cursor: pointer; font-weight: var(--cds-font-weight-medium); }
+.rd-gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--cds-gap-sm) var(--cds-gap-lg); margin: var(--cds-gap-md) 0 var(--cds-gap-sm); }
+.rd-gloss div { min-width: 0; }
+.rd-gloss dt { font-weight: var(--cds-font-weight-medium); }
+.rd-gloss dd { margin: 2px 0 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.5; }
+@media print { .rd-tabs, .rd-golink { display: none; } }
 </style>
 
 <div class="rd">
@@ -126,15 +155,58 @@
     </div>
   </header>
 
-  <nav class="rd-nav" aria-label="Seções do painel">
-    <a href="#mercado-agora">Mercado</a>
-    <a href="#equipe">Equipe</a>
-    <a href="#futuros">Futuros</a>
-    <a href="#desempenho">Desempenho</a>
-    <a href="#ideias">Ideias de negócio</a>
-    <a href="#renda">Renda digital</a>
-    <a href="#historico">Histórico</a>
-  </nav>
+  <div class="rd-tabs" role="tablist" aria-label="Partes do painel">
+    <button class="rd-tab" type="button" role="tab" id="tab-visao" aria-controls="visao" aria-selected="true" data-tab="visao">Visão geral</button>
+    <button class="rd-tab" type="button" role="tab" id="tab-futuros" aria-controls="aba-futuros" aria-selected="false" tabindex="-1" data-tab="aba-futuros">Futuros <span class="rd-badge" data-draw="badge-fut" data-source="resumo_futuros"></span></button>
+    <button class="rd-tab" type="button" role="tab" id="tab-oportunidades" aria-controls="oportunidades" aria-selected="false" tabindex="-1" data-tab="oportunidades">Oportunidades</button>
+    <button class="rd-tab" type="button" role="tab" id="tab-equipe" aria-controls="aba-equipe" aria-selected="false" tabindex="-1" data-tab="aba-equipe">O que a equipe viu</button>
+    <button class="rd-tab" type="button" role="tab" id="tab-historico" aria-controls="aba-historico" aria-selected="false" tabindex="-1" data-tab="aba-historico">Histórico</button>
+  </div>
+
+  <details class="rd-help" id="como-ler">
+    <summary>Como ler este painel</summary>
+    <dl class="rd-gloss">
+      <div><dt>LONG e SHORT</dt><dd>LONG é apostar que o preço vai subir. SHORT é apostar que vai cair. AGUARDAR quer dizer que não há operação boa agora.</dd></div>
+      <div><dt>Sinal condicional</dt><dd>Só vale se o preço chegar até a entrada indicada. Se não chegar em 48 horas, o sinal expira.</dd></div>
+      <div><dt>Entrada, stop e alvos</dt><dd>Entrada é onde se abre a operação. Stop é onde se sai com prejuízo pequeno se a ideia estiver errada. Alvos 1 e 2 são onde se realiza o lucro.</dd></div>
+      <div><dt>R (múltiplo do risco)</dt><dd>1R é o quanto se perde se o stop for atingido. +2R é ganhar o dobro do que se arriscou; -1R é perder o que se arriscou.</dd></div>
+      <div><dt>Mesa de decisão</dt><dd>Revisão final de cada sinal, com os princípios que grandes traders de futuros ensinam publicamente. Dá uma nota de 0 a 10 e só aprova com nota 7 ou mais.</dd></div>
+      <div><dt>Medo e Ganância</dt><dd>Índice de 0 a 100 do humor do mercado. Abaixo de 25 é medo extremo; acima de 75 é ganância extrema.</dd></div>
+      <div><dt>RSI</dt><dd>Mede se o preço subiu ou caiu rápido demais. Abaixo de 30 é sobrevenda; acima de 70 é sobrecompra.</dd></div>
+      <div><dt>Funding</dt><dd>Taxa que quem está comprado paga a quem está vendido (ou o contrário) nos futuros. Funding alto indica muita gente apostando na alta.</dd></div>
+      <div><dt>Nível: calmo, atenção, alerta</dt><dd>A avaliação geral do gestor de risco. Alerta só para algo grave, como queda de mais de 8% em um dia ou hack de corretora.</dd></div>
+    </dl>
+    <p class="rd-qd">Nada aqui é recomendação de investimento. Futuros com alavancagem podem zerar a margem.</p>
+  </details>
+
+  <div class="rd-panel" id="visao" role="tabpanel" aria-labelledby="tab-visao">
+  <section id="resumo-rapido">
+    <h2 class="rd-h2">Em 30 segundos</h2>
+    <div class="rd-quick">
+      <article class="rd-q" id="q-clima">
+        <p class="rd-qq">Como está o mercado?</p>
+        <p class="rd-qa" data-draw="q-clima" data-source="briefings" data-field="fng_label">—</p>
+        <p class="rd-qd" data-draw="q-clima-d">—</p>
+      </article>
+      <article class="rd-q" id="q-sinal">
+        <p class="rd-qq">Tem sinal para operar?</p>
+        <p class="rd-qa" data-draw="q-sinal" data-source="resumo_futuros" data-field="aprovados">—</p>
+        <p class="rd-qd" data-draw="q-sinal-d">—</p>
+        <button class="rd-golink" type="button" data-go="aba-futuros">Ver os sinais e a mesa de decisão</button>
+      </article>
+      <article class="rd-q" id="q-placar">
+        <p class="rd-qq">Os sinais estão dando certo?</p>
+        <p class="rd-qa" data-draw="q-placar" data-source="placar" data-field="r_total" data-row="0">—</p>
+        <p class="rd-qd" data-draw="q-placar-d">—</p>
+        <button class="rd-golink" type="button" data-go="desempenho">Ver o histórico de sinais</button>
+      </article>
+      <article class="rd-q" id="q-proxima">
+        <p class="rd-qq">Quando sai a próxima análise?</p>
+        <p class="rd-qa" data-draw="q-proxima">—</p>
+        <p class="rd-qd">A equipe roda sozinha a cada 4 horas e manda o relatório por e-mail.</p>
+      </article>
+    </div>
+  </section>
 
   <section id="mercado-agora">
     <h2 class="rd-h2">Mercado na última rodada</h2>
@@ -188,31 +260,17 @@
     </div>
   </section>
 
-  <section id="equipe">
-    <h2 class="rd-h2">O que cada especialista viu</h2>
-    <div class="rd-agents">
-      <article class="rd-agent" id="agente-mercado">
-        <h3><span class="rd-ico" aria-hidden="true">📈</span>Analista de mercado cripto</h3>
-        <p class="rd-role">Preços, fluxos, on-chain e movimentos fora do normal</p>
-        <p class="rd-text" data-draw="txt-mercado" data-source="briefings" data-field="mercado">—</p>
-      </article>
-      <article class="rd-agent" id="agente-negocios">
-        <h3><span class="rd-ico" aria-hidden="true">🧭</span>Caçador de negócios</h3>
-        <p class="rd-role">Startups, rodadas, tendências e o que dá para trazer ao Brasil</p>
-        <p class="rd-text" data-draw="txt-negocios" data-source="briefings" data-field="negocios">—</p>
-      </article>
-      <article class="rd-agent" id="agente-renda">
-        <h3><span class="rd-ico" aria-hidden="true">💡</span>Caçador de renda digital</h3>
-        <p class="rd-role">Novas formas de ganhar dinheiro na internet que dá para começar do Brasil</p>
-        <p class="rd-text" data-draw="txt-renda" data-source="briefings" data-field="renda">—</p>
-      </article>
-      <article class="rd-agent" id="agente-risco">
-        <h3><span class="rd-ico" aria-hidden="true">🛡️</span>Gestor de risco</h3>
-        <p class="rd-role">Revisa os outros agentes, aponta riscos e golpes</p>
-        <p class="rd-text" data-draw="txt-risco" data-source="briefings" data-field="risco">—</p>
-      </article>
-    </div>
+  <section id="sinais">
+    <h2 class="rd-h2">Sinais de mercado</h2>
+    <p class="rd-sub">Os 12 mais recentes, marcados pelo analista e revisados pelo gestor de risco.</p>
+    <ul class="rd-sinais" data-draw="sinais" data-source="sinais"></ul>
   </section>
+  </div>
+
+  <div class="rd-panel" id="aba-futuros" role="tabpanel" aria-labelledby="tab-futuros" hidden>
+  <p class="rd-panelintro">Sinais para operar no mercado futuro de cripto. O analista técnico sugere, a mesa de decisão aprova ou veta, e cada sinal é conferido depois contra o preço real. Termos desconhecidos? Abra "Como ler este painel" abaixo das abas.</p>
+
+
 
   <section id="futuros">
     <h2 class="rd-h2">Sinais para o mercado futuro</h2>
@@ -257,12 +315,11 @@
     </div>
   </section>
 
-  <section id="sinais">
-    <h2 class="rd-h2">Sinais de mercado</h2>
-    <p class="rd-sub">Os 12 mais recentes, marcados pelo analista e revisados pelo gestor de risco.</p>
-    <ul class="rd-sinais" data-draw="sinais" data-source="sinais"></ul>
-  </section>
 
+  </div>
+
+  <div class="rd-panel" id="oportunidades" role="tabpanel" aria-labelledby="tab-oportunidades" hidden>
+  <p class="rd-panelintro">Ideias de negócio que estão captando investimento no mundo, e formas de ganhar dinheiro na internet que dá para começar do Brasil. Cada uma tem fonte e nota de risco.</p>
   <section id="ideias">
     <h2 class="rd-h2">Banco de ideias de negócio</h2>
     <p class="rd-sub">Risco de 1 (baixo) a 5 (alto), na nota do gestor de risco. As mais novas primeiro.</p>
@@ -321,11 +378,44 @@
     </div>
   </section>
 
+  </div>
+
+  <div class="rd-panel" id="aba-equipe" role="tabpanel" aria-labelledby="tab-equipe" hidden>
+  <p class="rd-panelintro">O texto completo de cada especialista na última rodada.</p>
+  <section id="equipe">
+    <h2 class="rd-h2">O que cada especialista viu</h2>
+    <div class="rd-agents">
+      <article class="rd-agent" id="agente-mercado">
+        <h3><span class="rd-ico" aria-hidden="true">📈</span>Analista de mercado cripto</h3>
+        <p class="rd-role">Preços, fluxos, on-chain e movimentos fora do normal</p>
+        <p class="rd-text" data-draw="txt-mercado" data-source="briefings" data-field="mercado">—</p>
+      </article>
+      <article class="rd-agent" id="agente-negocios">
+        <h3><span class="rd-ico" aria-hidden="true">🧭</span>Caçador de negócios</h3>
+        <p class="rd-role">Startups, rodadas, tendências e o que dá para trazer ao Brasil</p>
+        <p class="rd-text" data-draw="txt-negocios" data-source="briefings" data-field="negocios">—</p>
+      </article>
+      <article class="rd-agent" id="agente-renda">
+        <h3><span class="rd-ico" aria-hidden="true">💡</span>Caçador de renda digital</h3>
+        <p class="rd-role">Novas formas de ganhar dinheiro na internet que dá para começar do Brasil</p>
+        <p class="rd-text" data-draw="txt-renda" data-source="briefings" data-field="renda">—</p>
+      </article>
+      <article class="rd-agent" id="agente-risco">
+        <h3><span class="rd-ico" aria-hidden="true">🛡️</span>Gestor de risco</h3>
+        <p class="rd-role">Revisa os outros agentes, aponta riscos e golpes</p>
+        <p class="rd-text" data-draw="txt-risco" data-source="briefings" data-field="risco">—</p>
+      </article>
+    </div>
+  </section>
+  </div>
+
+  <div class="rd-panel" id="aba-historico" role="tabpanel" aria-labelledby="tab-historico" hidden>
   <section id="historico">
     <h2 class="rd-h2">Histórico de rodadas</h2>
     <p class="rd-sub">Cada rodada guarda o relatório completo. É a memória da equipe: a próxima rodada lê as anteriores antes de escrever.</p>
     <div class="rd-hist" data-draw="hist" data-source="briefings"></div>
   </section>
+  </div>
 </div>
 
 <script>
@@ -378,7 +468,7 @@ dash.draw('gauge', (el) => {
   const b = rdLatest();
   el.replaceChildren();
   if (!b || b.fng == null) return;
-  const W = 220, H = 124, cx = W / 2, cy = 112, R = 100, r0 = 78;
+  const W = 220, H = 132, cx = W / 2, cy = 112, R = 100, r0 = 78;
   const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%').attr('height', '100%')
     .attr('role', 'img').attr('aria-label', 'Índice de Medo e Ganância: ' + b.fng + ' de 100');
   const ang = d3.scaleLinear().domain([0, 100]).range([-Math.PI / 2, Math.PI / 2]);
@@ -391,8 +481,8 @@ dash.draw('gauge', (el) => {
   const t = ang(b.fng);
   g.append('circle').attr('cx', Math.sin(t) * ((R + r0) / 2)).attr('cy', -Math.cos(t) * ((R + r0) / 2)).attr('r', 8)
     .style('fill', 'var(--color-panel)').style('stroke', 'var(--color-fg)').attr('stroke-width', 2.5);
-  g.append('text').attr('x', -R + 2).attr('y', 14).text('0').style('fill', 'var(--cds-text-secondary)').style('font-size', '10px');
-  g.append('text').attr('x', R - 2).attr('y', 14).attr('text-anchor', 'end').text('100').style('fill', 'var(--cds-text-secondary)').style('font-size', '10px');
+  g.append('text').attr('x', -(R + r0) / 2).attr('y', 16).attr('text-anchor', 'middle').text('0').style('fill', 'var(--cds-text-secondary)').style('font-size', '10px');
+  g.append('text').attr('x', (R + r0) / 2).attr('y', 16).attr('text-anchor', 'middle').text('100').style('fill', 'var(--cds-text-secondary)').style('font-size', '10px');
 });
 
 // Cartões de preço com minigráfico
@@ -697,7 +787,19 @@ dash.draw('chart-postura', (el) => {
     .call((g) => { g.select('.domain').remove(); g.selectAll('line').style('stroke', 'var(--cds-chart-grid)'); });
   const every = Math.max(1, Math.ceil(data.length / Math.max(2, Math.floor(W / 90))));
   svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickValues(data.map((d) => d.at).filter((_, i) => i % every === 0)).tickFormat((a) => d3.timeFormat('%d/%m %Hh')(new Date(a))).tickSize(0))
-    .call((g) => g.select('.domain').style('stroke', 'var(--cds-chart-axis)'));
+    .call((g) => g.select('.domain').style('stroke', 'var(--cds-chart-axis)'))
+    .call((g) => {
+      // esconde datas que encostariam na anterior, medindo o texto como foi desenhado
+      let fim = -Infinity;
+      g.selectAll('.tick').each(function () {
+        const t = this.querySelector('text'); if (!t) return;
+        const w = t.getComputedTextLength ? t.getComputedTextLength() : 60;
+        const cx = Number((this.getAttribute('transform') || '').replace(/[^0-9.,-]/g, '').split(',')[0]) || 0;
+        const ini = cx - w / 2 - 6;
+        if (ini < fim || cx - w / 2 < 0 || cx + w / 2 > W) { this.style.display = 'none'; return; }
+        fim = cx + w / 2;
+      });
+    });
   const stack = d3.stack().keys(RD_DIRS.map((d) => d[0]))(data);
   stack.forEach((layer, i) => {
     svg.append('g').selectAll('rect').data(layer).join('rect')
@@ -914,4 +1016,147 @@ dash.draw('hist', (el) => {
     det.append(s, t); el.append(det);
   });
 });
+// Resumo em 30 segundos e abas
+dash.calc('resumo_futuros', {
+  title: 'Sinais da última rodada',
+  description: 'Conta os sinais LONG/SHORT publicados na rodada mais recente e os sinais ainda em andamento (aguardando gatilho ou abertos).',
+  inputs: ['futuros'],
+  fn: (futuros) => {
+    const ultima = futuros.reduce((m, f) => (String(f.at) > m ? String(f.at) : m), '');
+    const daUltima = futuros.filter((f) => String(f.at) === ultima);
+    const ops = (f) => f.direcao === 'LONG' || f.direcao === 'SHORT';
+    return [{
+      aprovados: daUltima.filter(ops).length,
+      vetados: daUltima.filter((f) => f.mesa_decisao === 'VETADO').length,
+      avaliados: daUltima.length,
+      em_andamento: futuros.filter((f) => ops(f) && ['aguardando', 'aberto', 'alvo1 (aberto)'].includes(f.status)).length,
+    }];
+  },
+});
+
+dash.draw('badge-fut', (el) => {
+  const r = dash.data('resumo_futuros');
+  const d = r.status === 'ok' && r.data && r.data[0];
+  el.textContent = d ? String(d.aprovados) : '';
+  el.dataset.on = d && d.aprovados > 0 ? '1' : '0';
+  el.setAttribute('aria-label', d ? d.aprovados + ' sinais na última rodada' : '');
+});
+
+dash.draw('q-clima', (el) => {
+  const b = rdLatest();
+  if (!b) { el.textContent = '—'; return; }
+  rdMark(el, b);
+  el.textContent = b.fng_label || '—';
+  el.dataset.tone = b.fng != null && (b.fng < 25 || b.fng > 75) ? 'warn' : '';
+});
+dash.draw('q-clima-d', (el) => {
+  const b = rdLatest();
+  if (!b) { el.textContent = '—'; return; }
+  const p = [];
+  if (b.fng != null) p.push('Medo e Ganância em ' + b.fng + ' de 100.');
+  if (b.btc != null) p.push('Bitcoin a ' + rdFmt.usd(b.btc) + (b.btc_24h != null ? ' (' + rdFmt.pct(b.btc_24h) + ' em 24h).' : '.'));
+  if (b.nivel) p.push('Nível de risco: ' + b.nivel + '.');
+  el.textContent = p.join(' ');
+});
+
+dash.draw('q-sinal', (el) => {
+  const r = dash.data('resumo_futuros');
+  if (r.status !== 'ok' || !r.data || !r.data[0]) { el.textContent = '—'; return; }
+  const d = r.data[0];
+  el.textContent = d.aprovados > 0 ? (d.aprovados === 1 ? 'Sim, 1 sinal' : 'Sim, ' + d.aprovados + ' sinais') : 'Não, aguardar';
+  el.dataset.tone = d.aprovados > 0 ? 'ok' : '';
+});
+dash.draw('q-sinal-d', (el) => {
+  const r = dash.data('resumo_futuros');
+  if (r.status !== 'ok' || !r.data || !r.data[0]) { el.textContent = '—'; return; }
+  const d = r.data[0];
+  const p = [];
+  if (d.aprovados > 0) p.push('A última rodada publicou ' + d.aprovados + (d.aprovados === 1 ? ' sinal aprovado' : ' sinais aprovados') + ' pela mesa de decisão.');
+  else p.push('Na última rodada, nenhuma operação passou pelos critérios.' + (d.vetados ? ' A mesa vetou ' + d.vetados + (d.vetados === 1 ? ' sinal.' : ' sinais.') : ''));
+  if (d.em_andamento) p.push(d.em_andamento + (d.em_andamento === 1 ? ' sinal anterior segue' : ' sinais anteriores seguem') + ' em andamento.');
+  el.textContent = p.join(' ');
+});
+
+dash.draw('q-placar', (el) => {
+  const r = dash.data('placar');
+  if (r.status !== 'ok' || !r.data || !r.data[0]) { el.textContent = '—'; return; }
+  const d = r.data[0];
+  if (!d.encerrados) { el.textContent = 'Ainda sem resultado'; el.dataset.tone = ''; return; }
+  el.textContent = (d.r_total > 0 ? '+' : '') + String(d.r_total).replace('.', ',') + 'R no total';
+  el.dataset.tone = d.r_total > 0 ? 'ok' : d.r_total < 0 ? 'bad' : '';
+});
+dash.draw('q-placar-d', (el) => {
+  const r = dash.data('placar');
+  if (r.status !== 'ok' || !r.data || !r.data[0]) { el.textContent = '—'; return; }
+  const d = r.data[0];
+  if (!d.encerrados) {
+    el.textContent = d.publicados + (d.publicados === 1 ? ' sinal publicado' : ' sinais publicados') + ', nenhum encerrado ainda. O placar aparece quando um sinal bater no alvo ou no stop.';
+    return;
+  }
+  el.textContent = d.encerrados + (d.encerrados === 1 ? ' sinal encerrado' : ' sinais encerrados') + (d.taxa_acerto != null ? ', ' + d.taxa_acerto + '% com lucro.' : '.') + ' R é o resultado em múltiplos do risco de cada operação.';
+});
+
+// Próxima rodada: a tarefa roda aos 59 minutos das horas 0, 4, 8, 12, 16 e 20 (UTC).
+dash.draw('q-proxima', {
+  mount: (el) => {
+    const calc = () => {
+      const n = new Date(); const t = new Date(n);
+      t.setUTCMinutes(59, 0, 0);
+      while (t <= n || t.getUTCHours() % 4 !== 0) t.setUTCHours(t.getUTCHours() + 1);
+      const min = Math.round((t - n) / 60000);
+      const em = min >= 60 ? Math.floor(min / 60) + 'h' + String(min % 60).padStart(2, '0') : min + ' min';
+      el.textContent = 'Às ' + t.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}) + ' (em ' + em + ')';
+    };
+    calc();
+    return setInterval(calc, 30000);
+  },
+  update: () => {},
+  unmount: (el, timer) => clearInterval(timer),
+});
+
+// Abas
+(() => {
+  const tabs = [...document.querySelectorAll('.rd-tab')];
+  const panels = [...document.querySelectorAll('.rd-panel')];
+  if (!tabs.length || !panels.length) return;
+  const open = (id, focus) => {
+    if (!panels.some((p) => p.id === id)) return;
+    tabs.forEach((t) => {
+      const on = t.dataset.tab === id;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      if (on && focus) t.focus();
+    });
+    panels.forEach((p) => { p.hidden = p.id !== id; });
+    if (window.dash && dash.setLink) dash.setLink(id);
+  };
+  const panelOf = (id) => {
+    const el = id && document.getElementById(id);
+    const p = el && el.closest ? el.closest('.rd-panel') : null;
+    return p ? p.id : null;
+  };
+  const go = (id) => {
+    const pid = panelOf(id);
+    if (!pid) return;
+    open(pid);
+    if (id !== pid) requestAnimationFrame(() => { const el = document.getElementById(id); if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'}); });
+    else window.scrollTo({top: 0, behavior: 'smooth'});
+  };
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => open(t.dataset.tab));
+    t.addEventListener('keydown', (e) => {
+      const k = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!k) return;
+      e.preventDefault();
+      open(tabs[(i + k + tabs.length) % tabs.length].dataset.tab, true);
+    });
+  });
+  document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+  const h = decodeURIComponent((location.hash || '').slice(1));
+  if (h) go(h);
+  // Impressão: mostra todas as abas
+  let antes = null;
+  window.addEventListener('beforeprint', () => { if (antes) return; antes = panels.map((p) => p.hidden); panels.forEach((p) => { p.hidden = false; }); });
+  window.addEventListener('afterprint', () => { if (!antes) return; panels.forEach((p, j) => { p.hidden = antes[j]; }); antes = null; });
+})();
 </script>
