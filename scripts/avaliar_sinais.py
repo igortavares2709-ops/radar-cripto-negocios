@@ -73,7 +73,9 @@ def avaliar(s, cs, agora):
         return {"status": "invalido", "nota": "stop igual à entrada"}
     r1, r2 = abs(a1 - e) / risco, abs(a2 - e) / risco
     t0 = ms(s["at"])
-    depois = [c for c in cs if c["t"] + 3600_000 > t0]  # candles que terminam depois do sinal
+    # só candles que começam depois do sinal: o candle em andamento na hora da publicação
+    # pode ter tocado a entrada ou o stop antes de o sinal existir
+    depois = [c for c in cs if c["t"] >= t0]
     if not depois:
         return {"status": "aguardando", "nota": "sem candles depois do sinal"}
 

@@ -1,6 +1,6 @@
 <meta name="dash-one-writer">
 <style>
-.rd { display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); }
+.rd { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); }
 .rd-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--cds-gap-lg); align-items: center; padding: var(--cds-pad-lg); border-radius: calc(var(--cds-radius) * 2); border: 1px solid var(--color-border-line);
   background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--color-warn) 14%, transparent), transparent 60%), radial-gradient(120% 140% at 0% 100%, color-mix(in srgb, var(--color-ok) 12%, transparent), transparent 60%), var(--color-panel); }
 @media (max-width: 640px) { .rd-hero { grid-template-columns: 1fr; } }
@@ -116,7 +116,8 @@
 .rd-badge { min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--color-fg-muted) 22%, transparent); color: inherit; }
 .rd-badge:empty { display: none; }
 .rd-badge[data-on="1"] { background: var(--color-ok); color: var(--color-bg); }
-.rd-panel { display: grid; gap: var(--cds-gap-xl); }
+.rd-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--cds-gap-xl); }
+.rd-panel[hidden] { display: none; }
 .rd-panelintro { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-body); max-width: 80ch; }
 /* Resumo em 30 segundos */
 .rd-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--cds-gap-md); }
@@ -135,6 +136,12 @@
 .rd-gloss dt { font-weight: var(--cds-font-weight-medium); }
 .rd-gloss dd { margin: 2px 0 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.5; }
 @media print { .rd-tabs, .rd-golink { display: none; } }
+.rd-collapsed tbody tr:nth-child(n+13) { display: none; }
+.rd-more { justify-self: start; margin-top: var(--cds-gap-sm); font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.rd-more:hover { border-color: var(--color-fg-muted); }
+.rd-more .rd-m-o, .rd-more[aria-expanded="true"] .rd-m-c { display: none; }
+.rd-more[aria-expanded="true"] .rd-m-o { display: inline; }
+@media print { .rd-collapsed tbody tr:nth-child(n+13) { display: table-row; } .rd-more { display: none; } }
 </style>
 
 <div class="rd">
@@ -286,7 +293,7 @@
     <div class="rd-placar" data-draw="placar" data-source="placar"></div>
     <div class="rd-grid2" style="margin-bottom: var(--cds-gap-lg)">
       <div class="rd-card" id="grafico-postura">
-        <h3 class="rd-h3">Postura do analista em cada rodada</h3>
+        <h3 class="rd-h3">Postura do analista nas rodadas dos últimos 3 dias</h3>
         <div class="rd-legend"><span><i class="rd-dot" data-draw="lg-long"></i>LONG</span><span><i class="rd-dot" data-draw="lg-short"></i>SHORT</span><span><i class="rd-dot" data-draw="lg-aguardar"></i>AGUARDAR</span></div>
         <div class="rd-chart rd-short" data-draw="chart-postura" data-source="postura"></div>
       </div>
@@ -296,7 +303,7 @@
         <div class="rd-chart rd-short" data-draw="chart-curva" data-source="curva_r"></div>
       </div>
     </div>
-    <div class="rd-tablewrap">
+    <div class="rd-tablewrap rd-collapsed" id="tabela-futuros">
       <table class="rd-table" data-source="futuros" data-row-key="id">
         <thead><tr>
           <th data-field="at">Publicado</th>
@@ -313,6 +320,7 @@
         <tbody data-draw="historico-futuros"></tbody>
       </table>
     </div>
+    <button class="rd-more" type="button" data-more="tabela-futuros" aria-expanded="false"><span class="rd-m-c">Mostrar todos os sinais</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
   </section>
 
 
@@ -333,7 +341,7 @@
         <div class="rd-bars" data-draw="bars-risco" data-source="risco_ideias"></div>
       </div>
     </div>
-    <div class="rd-tablewrap">
+    <div class="rd-tablewrap rd-collapsed" id="tabela-ideias">
       <table class="rd-table" data-source="ideias" data-row-key="id">
         <thead><tr>
           <th data-field="titulo">Ideia</th>
@@ -346,6 +354,7 @@
         <tbody data-draw="ideias"></tbody>
       </table>
     </div>
+    <button class="rd-more" type="button" data-more="tabela-ideias" aria-expanded="false"><span class="rd-m-c">Mostrar todas as ideias</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
   </section>
 
   <section id="renda">
@@ -362,7 +371,7 @@
         <div class="rd-bars" data-draw="bars-risco-renda" data-source="risco_renda"></div>
       </div>
     </div>
-    <div class="rd-tablewrap">
+    <div class="rd-tablewrap rd-collapsed" id="tabela-renda">
       <table class="rd-table" data-source="renda" data-row-key="id">
         <thead><tr>
           <th data-field="titulo">Oportunidade</th>
@@ -376,6 +385,7 @@
         <tbody data-draw="renda"></tbody>
       </table>
     </div>
+    <button class="rd-more" type="button" data-more="tabela-renda" aria-expanded="false"><span class="rd-m-c">Mostrar todas as oportunidades</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
   </section>
 
   </div>
@@ -755,12 +765,14 @@ dash.draw('placar', (el) => {
 // Postura por rodada
 dash.calc('postura', {
   title: 'Postura do analista por rodada',
-  description: 'Quantos ativos o analista técnico marcou como LONG, SHORT ou AGUARDAR em cada rodada.',
+  description: 'Quantos ativos o analista técnico marcou como LONG, SHORT ou AGUARDAR em cada rodada dos últimos 3 dias. Os registros AGUARDAR mais antigos vão para o arquivo.',
   inputs: ['futuros'],
   fn: (futuros) => {
     const m = new Map();
+    const ultima = futuros.reduce((x, f) => (String(f.at) > x ? String(f.at) : x), '');
+    const corte = ultima ? new Date(new Date(ultima).getTime() - 3 * 86400000).toISOString() : '';
     futuros.forEach((f) => {
-      if (!f.at) return;
+      if (!f.at || String(f.at) < corte) return;
       const r = m.get(f.at) || {at: f.at, LONG: 0, SHORT: 0, AGUARDAR: 0};
       if (r[f.direcao] != null) r[f.direcao] += 1;
       m.set(f.at, r);
@@ -1159,4 +1171,12 @@ dash.draw('q-proxima', {
   window.addEventListener('beforeprint', () => { if (antes) return; antes = panels.map((p) => p.hidden); panels.forEach((p) => { p.hidden = false; }); });
   window.addEventListener('afterprint', () => { if (!antes) return; panels.forEach((p, j) => { p.hidden = antes[j]; }); antes = null; });
 })();
+// "Mostrar todas": as tabelas começam com as 12 linhas mais recentes
+document.querySelectorAll('[data-more]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const w = document.getElementById(b.dataset.more); if (!w) return;
+    const aberto = w.classList.toggle('rd-collapsed') === false;
+    b.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+  });
+});
 </script>

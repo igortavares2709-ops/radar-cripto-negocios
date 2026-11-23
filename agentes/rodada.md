@@ -16,4 +16,5 @@ A cada rodada, a sessão baixa a versão mais nova de `scripts/analise_tecnica.p
 5. **Os agentes:** analista de mercado, caçador de negócios, analista técnico de futuros, caçador de renda digital e gestor de risco (regras no README).
    **Mesa de decisão:** revisa cada sinal candidato com as regras de [`mesa_de_decisao.md`](mesa_de_decisao.md). Só os sinais aprovados são publicados como LONG/SHORT. Os vetados viram "AGUARDAR", com o parecer.
 6. **Gravar** documentos novos nas quatro coleções, com o mesmo `at` para a rodada inteira.
+   **Arquivamento:** o painel lê no máximo 1.000 registros por coleção. Por isso, a cada rodada, os registros "AGUARDAR" de futuros com mais de 3 dias vão para `data/radar/arquivo_futuros` e os sinais de mercado com mais de 10 dias vão para `data/radar/arquivo_sinais`. A cópia e a remoção do original acontecem juntas, numa única gravação que só vale inteira. Sinais LONG/SHORT, rodadas, ideias e renda nunca são arquivados.
 7. **Relatório final** (vai por e-mail e push): resumo, mercado, sinais de futuros, placar dos sinais, negócios, riscos, fontes e o link do painel. Começa com "ALERTA:" quando o nível é alerta.
