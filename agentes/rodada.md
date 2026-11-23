@@ -13,6 +13,7 @@ A cada rodada, a sessão baixa a versão mais nova de `scripts/analise_tecnica.p
    - Negócios: techcrunch.com, news.crunchbase.com, bloomberg.com, cnbc.com, theinformation.com
    - Brasil: valor.globo.com, infomoney.com.br, bcb.gov.br, gov.br, neofeed.com.br, braziljournal.com
    - Proibido: agregadores, SEO, "price prediction", Medium, redes sociais. Toda notícia leva a fonte e a data.
-5. **Os quatro agentes:** analista de mercado, caçador de negócios, analista técnico de futuros e gestor de risco (regras no README).
+5. **Os agentes:** analista de mercado, caçador de negócios, analista técnico de futuros, caçador de renda digital e gestor de risco (regras no README).
+   **Mesa de decisão:** revisa cada sinal candidato com as regras de [`mesa_de_decisao.md`](mesa_de_decisao.md). Só os sinais aprovados são publicados como LONG/SHORT. Os vetados viram "AGUARDAR", com o parecer.
 6. **Gravar** documentos novos nas quatro coleções, com o mesmo `at` para a rodada inteira.
 7. **Relatório final** (vai por e-mail e push): resumo, mercado, sinais de futuros, placar dos sinais, negócios, riscos, fontes e o link do painel. Começa com "ALERTA:" quando o nível é alerta.

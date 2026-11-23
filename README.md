@@ -1,6 +1,6 @@
 # Radar Cripto & Negócios
 
-Uma equipe de 4 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos e as novas ideias de negócio pelo mundo, grava tudo num painel e envia um relatório por e-mail e push.
+Uma equipe de agentes de IA (Claude), com uma mesa de decisão para os sinais de futuros, que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos e as novas ideias de negócio pelo mundo, grava tudo num painel e envia um relatório por e-mail e push.
 
 > Isto é análise automatizada, **não é recomendação de investimento**. Futuros com alavancagem podem zerar a margem.
 
@@ -23,6 +23,12 @@ Uma equipe de 4 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h 
 6. **Grava** no painel e **envia o relatório** por e-mail e push.
 
 O passo a passo completo que cada rodada segue está em [`agentes/rodada.md`](agentes/rodada.md).
+
+## Mesa de decisão
+
+Antes de qualquer sinal LONG ou SHORT ser publicado, ele passa por uma **mesa de decisão**: uma revisão final que aplica os princípios que grandes traders de futuros ensinam publicamente (Paul Tudor Jones, Stanley Druckenmiller, Peter Brandt, Linda Raschke, Ed Seykota e os Turtles, Mark Douglas). A mesa confere vetos automáticos, dá uma nota de 0 a 10 e só aprova sinais com nota 7 ou mais e nenhum veto. Os sinais vetados aparecem como "AGUARDAR", com o motivo. As regras completas estão em [`agentes/mesa_de_decisao.md`](agentes/mesa_de_decisao.md). Para mudar as regras, edite esse arquivo: a rodada seguinte já lê a versão nova.
+
+A mesa usa os princípios como disciplina. Ela não fala em nome dessas pessoas e não garante os resultados que elas tiveram.
 
 ## Regras do analista técnico
 
