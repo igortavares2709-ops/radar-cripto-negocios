@@ -341,8 +341,8 @@
   <section id="grafico">
     <div class="rd-grid2">
       <div class="rd-card" id="grafico-btc">
-        <h3 class="rd-h3"><span data-draw="chart-nome">Bitcoin</span> e sentimento ao longo das rodadas</h3>
-        <div class="rd-legend"><span><i data-draw="lg-btc"></i>Preço do <span data-draw="chart-sigla">BTC</span> (US$, à esquerda)</span><span><i class="rd-dot" data-draw="lg-fng"></i>Medo e Ganância (0 a 100, à direita)</span></div>
+        <h3 class="rd-h3"><span data-draw="chart-nome"></span> e sentimento ao longo das rodadas</h3>
+        <div class="rd-legend"><span><i data-draw="lg-btc"></i>Preço do <span data-draw="chart-sigla"></span> (US$, à esquerda)</span><span><i class="rd-dot" data-draw="lg-fng"></i>Medo e Ganância (0 a 100, à direita)</span></div>
         <div class="rd-chart" data-draw="chart" data-source="briefings"></div>
       </div>
       <div class="rd-card" id="grafico-comparacao">
@@ -479,7 +479,7 @@
   <div class="rd-panel" id="aba-carteira" role="tabpanel" aria-labelledby="tab-carteira" hidden>
   <section id="carteira">
     <h2 class="rd-h2">Carteira fictícia de US$ 2.000</h2>
-    <p class="rd-sub" data-draw="carteira-regras">Uma conta de mentira que segue todos os sinais LONG/SHORT publicados.</p>
+    <p class="rd-sub" data-draw="carteira-regras"></p>
     <div class="rd-placar" data-draw="carteira-tiles" data-source="carteira"></div>
     <div class="rd-card" id="grafico-saldo" style="margin-bottom: var(--cds-gap-lg)">
       <h3 class="rd-h3">Evolução do saldo</h3>
@@ -836,7 +836,7 @@ dash.draw('chart-var', (el) => {
   if (v.status !== 'ok' || !Array.isArray(v.data)) { rdFail(el, 'variacao'); return; }
   const data = v.data.map((r) => ({...r, d: new Date(r.at)}));
   if (new Set(data.map((d) => d.at)).size < 2) { rdEmpty(el, 'O gráfico aparece a partir da segunda rodada.'); return; }
-  const W = el.clientWidth || 600, H = 240, m = {t: 12, r: 44, b: 26, l: 48};
+  const W = el.clientWidth || 600, H = 240, m = {t: 12, r: 62, b: 26, l: 48};
   const x = d3.scaleTime().domain(d3.extent(data, (d) => d.d)).range([m.l, W - m.r]);
   const ext = d3.extent(data, (d) => d.variacao_pct); const y = d3.scaleLinear().domain([Math.min(0, ext[0]), Math.max(0, ext[1])]).nice().range([H - m.b, m.t]);
   const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Variação percentual de BTC, ETH e SOL desde a primeira rodada');
@@ -844,12 +844,21 @@ dash.draw('chart-var', (el) => {
   svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(0)).attr('y2', y(0)).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 3');
   rdEixoDatas(svg, x, m, W, H);
   const series = d3.group(data, (d) => d.ativo);
+  const rotulos = [];
   RD_ATIVOS.forEach((a, i) => {
     const s = (series.get(a) || []).sort((p, q) => p.d - q.d); if (!s.length) return;
     svg.append('path').datum(s).attr('fill', 'none').style('stroke', dash.colors[i]).attr('stroke-width', 2).attr('d', d3.line().x((d) => x(d.d)).y((d) => y(d.variacao_pct)));
     const last = s[s.length - 1];
-    svg.append('text').attr('x', x(last.d) + 6).attr('y', y(last.variacao_pct)).attr('dy', '0.35em').text(rdFmt.pct(last.variacao_pct)).style('fill', dash.colors[i]);
+    rotulos.push({x: x(last.d) + 6, y: y(last.variacao_pct), texto: rdFmt.pct(last.variacao_pct), cor: dash.colors[i]});
   });
+  // afasta os rótulos finais que cairiam um em cima do outro (14 px entre eles), dentro do gráfico
+  rotulos.sort((p, q) => p.y - q.y);
+  rotulos.forEach((r, k) => { if (k && r.y - rotulos[k - 1].y < 14) r.y = rotulos[k - 1].y + 14; });
+  for (let k = rotulos.length - 1; k >= 0; k--) {
+    const teto = k === rotulos.length - 1 ? H - m.b - 4 : rotulos[k + 1].y - 14;
+    if (rotulos[k].y > teto) rotulos[k].y = teto;
+  }
+  rotulos.forEach((r) => svg.append('text').attr('x', r.x).attr('y', Math.max(m.t + 4, r.y)).attr('dy', '0.35em').text(r.texto).style('fill', r.cor).style('font-size', '11px'));
   const tip = rdTip(el, W, 280);
   const rule = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).style('stroke', 'var(--cds-chart-reference)').style('display', 'none');
   const ats = Array.from(new Set(data.map((d) => d.at))).map((a) => ({at: a, d: new Date(a)}));
