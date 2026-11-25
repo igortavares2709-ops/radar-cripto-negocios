@@ -322,8 +322,8 @@
 
   <section id="trades-agora">
     <h2 class="rd-h2">Sinais abertos agora</h2>
-    <p class="rd-sub" data-draw="trades-agora-sub" data-source="vivo_resumo"></p>
-    <div class="rd-tlist" data-draw="trades-agora" data-source="vivo_agora"></div>
+    <p class="rd-sub" data-draw="trades-agora-sub" data-source="vivo_resumo vivo_resumo_conf"></p>
+    <div class="rd-tlist" data-draw="trades-agora" data-source="vivo_agora ao_vivo_posicoes"></div>
     <button class="rd-golink" type="button" data-go="aba-vivo">Abrir os sinais abertos ao vivo</button>
   </section>
 
@@ -493,9 +493,9 @@
   <section id="ao-vivo">
     <h2 class="rd-h2">Sinais abertos, ao vivo</h2>
     <p class="rd-sub">Cada operação em andamento da carteira fictícia: quanto está rendendo, quanto falta para o stop e para o alvo, o melhor e o pior momento desde a entrada e quando vence o prazo. Com a página aberta, o preço vem do CoinGecko e se atualiza sozinho a cada 30 segundos (preço médio do mercado, que pode diferir um pouco do da OKX). O monitor confere oficialmente a cada hora, pelo preço da OKX, e é ele que decide se bateu o stop ou o alvo.</p>
-    <div class="rd-vivo-top" data-draw="vivo-topo" data-source="ao_vivo vivo_resumo"></div>
-    <div class="rd-placar rd-vivo-tiles" data-draw="vivo-tiles" data-source="vivo_resumo"></div>
-    <div class="rd-fut" data-draw="vivo-cards" data-source="vivo_agora"></div>
+    <div class="rd-vivo-top" data-draw="vivo-topo" data-source="ao_vivo vivo_resumo vivo_resumo_conf"></div>
+    <div class="rd-placar rd-vivo-tiles" data-draw="vivo-tiles" data-source="vivo_resumo vivo_resumo_conf"></div>
+    <div class="rd-fut" data-draw="vivo-cards" data-source="vivo_agora ao_vivo_posicoes"></div>
     <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Últimos avisos</h3>
     <p class="rd-sub">Quando um trade é acionado, bate um alvo, bate o stop ou vence, aparece aqui e chega como aviso no celular.</p>
     <ul class="rd-sinais rd-vivo-ev" data-draw="vivo-eventos" data-source="ao_vivo_eventos"></ul>
@@ -511,7 +511,7 @@
     <div class="rd-card" id="grafico-saldo" style="margin-bottom: var(--cds-gap-lg)">
       <h3 class="rd-h3">Evolução do saldo</h3>
       <p class="rd-sub">Cada ponto é uma operação encerrada. A linha cinza tracejada marca os US$ 2.000 do início; o trecho colorido tracejado no fim vai até o saldo de agora, contando as operações abertas. Passe o mouse ou o dedo num ponto para ver a operação.</p>
-      <div class="rd-chart" data-draw="chart-saldo" data-source="carteira_curva vivo_resumo"></div>
+      <div class="rd-chart" data-draw="chart-saldo" data-source="carteira_curva vivo_resumo vivo_resumo_conf"></div>
     </div>
     <h3 class="rd-h3">Operações em aberto</h3>
     <ul class="rd-sinais" data-draw="carteira-abertas" data-source="carteira"></ul>
@@ -1747,12 +1747,22 @@ dash.draw('vivo-topo', {
       const pulso = rdEl('span', 'rd-pulso'); pulso.dataset.velho = idade > 75 * 60000 ? '1' : '0';
       const prox = rdProximaConferencia(Date.now());
       const item = (txt, val, cls) => { const s = rdEl('span'); s.append(txt); const b = rdEl('b', cls || '', val); s.append(b); el.append(s); return b; };
-      const pv = window.rdVivoPrecosEm;
+      rdMarcaPrecoVivo();
+      const pv = rdTemPrecoVivo() ? window.rdVivoPrecosEm : null;
+      const st = dash.data('precos_vivo').status;
       const s0 = rdEl('span');
       if (pv) { pulso.dataset.velho = Date.now() - pv > 120000 ? '1' : '0'; s0.append(pulso, 'Preços ao vivo há ' + Math.max(0, Math.round((Date.now() - pv) / 1000)) + ' s'); }
-      else s0.append(pulso, 'Preços da conferência');
+      else {
+        pulso.dataset.velho = '1';
+        s0.append(pulso, st === 'loading' ? 'Buscando preços ao vivo…' : st === 'connect' || st === 'declined' ? 'Preços da conferência (o preço ao vivo precisa da permissão do CoinGecko)' : 'Preços da conferência (preço ao vivo indisponível agora)');
+      }
       el.append(s0);
-      item('Conferido há ', rdDuracao(idade));
+      item('Conferido há ', rdDuracao(idade), idade > 75 * 60000 ? 'rd-down' : '');
+      if (idade > 75 * 60000) {
+        // o monitor roda de hora em hora: passou disso, alguma conferência não aconteceu
+        const av = rdEl('span', 'rd-chip-risco', 'conferência atrasada: o monitor não atualiza há ' + rdDuracao(idade) + '; stop e alvo só são confirmados quando ele voltar');
+        el.append(av);
+      }
       if (prox) item('Próxima conferência: ', prox.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}));
       const d = rdVivoResumo();
       if (d) { item('Abertos: ', String(d.abertos)); item('Aguardando gatilho: ', String(d.aguardando)); }
@@ -1833,6 +1843,16 @@ dash.calc('vivo_agora', {
 });
 // Os códigos das moedas em andamento viram o filtro da consulta (só muda quando a lista muda).
 window.rdVivoPrecosEm = null;
+// Hora da última resposta boa do CoinGecko: quando a busca termina (estava atualizando e parou) com status ok.
+// Também roda no relógio do topo, porque uma resposta igual à anterior pode não disparar onData.
+window.rdVivoAtualizando = false;
+window.rdMarcaPrecoVivo = () => {
+  const pv = dash.data('precos_vivo');
+  const ok = pv.status === 'ok' && Array.isArray(pv.data) && pv.data.length > 0;
+  if (ok && !pv.refreshing && (rdVivoAtualizando || !rdVivoPrecosEm)) rdVivoPrecosEm = Date.now();
+  rdVivoAtualizando = !!pv.refreshing;
+  if (!ok && pv.status !== 'loading') rdVivoPrecosEm = null;
+};
 dash.onData(() => {
   const r = dash.data('ao_vivo_posicoes');
   if (r.status === 'ok' && Array.isArray(r.data)) {
@@ -1840,41 +1860,64 @@ dash.onData(() => {
     const atual = (dash.params().ids || []).slice().sort().join(',');
     if (ids.length && ids.join(',') !== atual) dash.setParams({ids});
   }
-  const pv = dash.data('precos_vivo');
-  if (pv.status === 'ok' && !pv.refreshing && Array.isArray(pv.data) && pv.data.length) window.rdVivoPrecosEm = Date.now();
+  rdMarcaPrecoVivo();
 });
+// Resumo dos sinais abertos. Duas versões com as mesmas contas: uma pelo preço ao vivo (depende do
+// CoinGecko) e outra pelos números da última conferência do monitor, usada quando o CoinGecko falha,
+// ainda não tem permissão ou está carregando.
+const rdResumoDe = (trades, quadro) => {
+  const doc = (quadro || [])[0];
+  const abertos = (trades || []).filter((p) => p.status !== 'aguardando');
+  const flut = abertos.reduce((t, p) => t + (typeof p.flutuante_usd === 'number' ? p.flutuante_usd : 0), 0);
+  const comStop = abertos.filter((p) => typeof p.dist_stop_pct === 'number').sort((a, b) => a.dist_stop_pct - b.dist_stop_pct);
+  const comAlvo = abertos.filter((p) => typeof p.dist_alvo_pct === 'number').sort((a, b) => a.dist_alvo_pct - b.dist_alvo_pct);
+  return [{
+    abertos: abertos.length,
+    aguardando: (trades || []).length - abertos.length,
+    em_lucro: abertos.filter((p) => (p.r_flutuante || 0) > 0).length,
+    flutuante_usd: Math.round(flut * 100) / 100,
+    saldo: doc ? doc.saldo : null,
+    saldo_agora: doc ? Math.round((doc.saldo + flut) * 100) / 100 : null,
+    ao_vivo: (trades || []).some((p) => p.ao_vivo),
+    perto_stop: comStop[0] ? comStop[0].ativo : null, perto_stop_pct: comStop[0] ? comStop[0].dist_stop_pct : null,
+    perto_alvo: comAlvo[0] ? comAlvo[0].ativo : null, perto_alvo_pct: comAlvo[0] ? comAlvo[0].dist_alvo_pct : null,
+  }];
+};
 dash.calc('vivo_resumo', {
-  title: 'Resumo dos sinais abertos',
-  description: 'Soma do resultado em aberto (em US$) dos trades abertos pelo preço ao vivo, saldo contando esse resultado, quantos estão no lucro e o trade mais perto do stop e do alvo.',
+  title: 'Resumo dos sinais abertos (preço ao vivo)',
+  description: 'Soma do resultado em aberto (em US$) dos trades abertos pelo preço ao vivo do CoinGecko, saldo contando esse resultado, quantos estão no lucro e o trade mais perto do stop e do alvo.',
   inputs: ['vivo_agora', 'ao_vivo_doc'],
-  fn: (trades, quadro) => {
-    const doc = (quadro || [])[0];
-    const abertos = (trades || []).filter((p) => p.status !== 'aguardando');
-    const flut = abertos.reduce((t, p) => t + (typeof p.flutuante_usd === 'number' ? p.flutuante_usd : 0), 0);
-    const comStop = abertos.filter((p) => typeof p.dist_stop_pct === 'number').sort((a, b) => a.dist_stop_pct - b.dist_stop_pct);
-    const comAlvo = abertos.filter((p) => typeof p.dist_alvo_pct === 'number').sort((a, b) => a.dist_alvo_pct - b.dist_alvo_pct);
-    return [{
-      abertos: abertos.length,
-      aguardando: (trades || []).length - abertos.length,
-      em_lucro: abertos.filter((p) => (p.r_flutuante || 0) > 0).length,
-      flutuante_usd: Math.round(flut * 100) / 100,
-      saldo: doc ? doc.saldo : null,
-      saldo_agora: doc ? Math.round((doc.saldo + flut) * 100) / 100 : null,
-      ao_vivo: (trades || []).some((p) => p.ao_vivo),
-      perto_stop: comStop[0] ? comStop[0].ativo : null, perto_stop_pct: comStop[0] ? comStop[0].dist_stop_pct : null,
-      perto_alvo: comAlvo[0] ? comAlvo[0].ativo : null, perto_alvo_pct: comAlvo[0] ? comAlvo[0].dist_alvo_pct : null,
-    }];
-  },
+  fn: (trades, quadro) => rdResumoDe(trades, quadro),
 });
-const rdVivoResumo = () => { const r = dash.data('vivo_resumo'); return r.status === 'ok' && Array.isArray(r.data) && r.data[0] ? r.data[0] : null; };
+dash.calc('vivo_resumo_conf', {
+  title: 'Resumo dos sinais abertos (última conferência)',
+  description: 'O mesmo resumo pelos números da última conferência do monitor (preço da OKX); vale quando o preço ao vivo não está disponível.',
+  inputs: ['ao_vivo_posicoes', 'ao_vivo_doc'],
+  fn: (trades, quadro) => rdResumoDe(trades, quadro),
+});
+// O preço ao vivo está valendo agora? (resposta boa do CoinGecko e o cálculo pronto)
+window.rdTemPrecoVivo = () => dash.data('precos_vivo').status === 'ok' && dash.data('vivo_agora').status === 'ok';
+// Os sinais abertos pela melhor fonte disponível: ao vivo, ou a última conferência.
+window.rdVivoLista = () => {
+  const vivo = dash.data('vivo_agora');
+  if (rdTemPrecoVivo() && Array.isArray(vivo.data)) return {fonte: 'vivo_agora', status: 'ok', data: vivo.data};
+  const conf = dash.data('ao_vivo_posicoes');
+  return {fonte: 'ao_vivo_posicoes', status: conf.status, data: Array.isArray(conf.data) ? conf.data.map((p) => ({...p, ao_vivo: false})) : null};
+};
+window.rdVivoResumoFonte = () => {
+  const id = rdTemPrecoVivo() && dash.data('vivo_resumo').status === 'ok' ? 'vivo_resumo' : 'vivo_resumo_conf';
+  const r = dash.data(id);
+  return {fonte: id, d: r.status === 'ok' && Array.isArray(r.data) && r.data[0] ? r.data[0] : null};
+};
+const rdVivoResumo = () => rdVivoResumoFonte().d;
 // abertos primeiro, do mais perto do stop ao mais longe; depois os que aguardam gatilho
 const rdOrdemRisco = (lista) => lista.slice().sort((a, b) => (a.status === 'aguardando') - (b.status === 'aguardando')
   || (a.status === 'aguardando' ? (a.dist_entrada_pct ?? 999) - (b.dist_entrada_pct ?? 999) : (a.dist_stop_pct ?? 999) - (b.dist_stop_pct ?? 999)));
 dash.draw('vivo-tiles', (el) => {
   el.replaceChildren();
-  const d = rdVivoResumo();
+  const {fonte, d} = rdVivoResumoFonte();
   if (!d || !(d.abertos + d.aguardando)) return;
-  rdTiles(el, 'vivo_resumo', [
+  rdTiles(el, fonte, [
     {lbl: 'Resultado em aberto', field: 'flutuante_usd', value: rdFmt.usdS(d.flutuante_usd), note: d.ao_vivo ? 'pelo preço ao vivo' : 'pela última conferência', cls: d.flutuante_usd > 0 ? 'rd-up' : d.flutuante_usd < 0 ? 'rd-down' : ''},
     {lbl: 'Saldo contando as abertas', field: 'saldo_agora', value: rdFmt.usd(d.saldo_agora), note: 'fechado: ' + rdFmt.usd(d.saldo)},
     {lbl: 'No lucro agora', field: 'em_lucro', value: d.em_lucro + ' de ' + d.abertos, note: d.aguardando ? d.aguardando + ' aguardando gatilho' : 'abertos'},
@@ -1904,18 +1947,18 @@ const rdBarraProgresso = (p) => {
   return caixa;
 };
 dash.draw('trades-agora-sub', (el) => {
-  const d = rdVivoResumo();
+  const {fonte, d} = rdVivoResumoFonte();
   if (!d) { el.textContent = ''; return; }
   if (!(d.abertos + d.aguardando)) { el.textContent = 'Nenhum sinal aberto agora.'; return; }
   el.replaceChildren();
   el.append(d.abertos + (d.abertos === 1 ? ' aberto' : ' abertos') + (d.aguardando ? ' e ' + d.aguardando + ' aguardando gatilho' : '') + ', somando ',
-    rdSrc(rdEl('b', d.flutuante_usd > 0 ? 'rd-up' : d.flutuante_usd < 0 ? 'rd-down' : '', rdFmt.usdS(d.flutuante_usd)), 'vivo_resumo', 'flutuante_usd', 'row:0'),
-    d.ao_vivo ? ' pelo preço ao vivo. A barra mostra onde o preço está entre o stop (vermelho) e o alvo (verde); o traço fino é a entrada.' : ' pela última conferência.');
+    rdSrc(rdEl('b', d.flutuante_usd > 0 ? 'rd-up' : d.flutuante_usd < 0 ? 'rd-down' : '', rdFmt.usdS(d.flutuante_usd)), fonte, 'flutuante_usd', 'row:0'),
+    (d.ao_vivo ? ' pelo preço ao vivo.' : ' pela última conferência do monitor (preço ao vivo indisponível agora).') + ' A barra mostra onde o preço está entre o stop (vermelho) e o alvo (verde); o traço fino é a entrada.');
 });
 dash.draw('trades-agora', (el) => {
-  const r = dash.data('vivo_agora');
+  const r = rdVivoLista();
   el.replaceChildren();
-  if (r.status !== 'ok' || !Array.isArray(r.data)) { rdFail(el, 'vivo_agora'); return; }
+  if (r.status !== 'ok' || !Array.isArray(r.data)) { rdFail(el, r.fonte); return; }
   rdOrdemRisco(r.data).forEach((p) => {
     const onde = rdWhereId(p.id);
     const row = rdEl('button', 'rd-trow'); row.type = 'button'; row.dataset.dir = p.direcao || '';
@@ -1925,21 +1968,21 @@ dash.draw('trades-agora', (el) => {
     row.append(nome, rdBarraProgresso(p));
     const r1 = rdEl('span', 'rd-tr-r'), u = rdEl('span', 'rd-tr-usd');
     if (p.status !== 'aguardando' && typeof p.r_flutuante === 'number') {
-      r1.textContent = rdFmt.r(p.r_flutuante); r1.classList.add(p.r_flutuante > 0 ? 'rd-up' : p.r_flutuante < 0 ? 'rd-down' : 'rd-chg'); rdSrc(r1, 'vivo_agora', 'r_flutuante', onde);
-      if (typeof p.flutuante_usd === 'number') { u.textContent = rdFmt.usdS(p.flutuante_usd); u.classList.add(p.flutuante_usd >= 0 ? 'rd-up' : 'rd-down'); rdSrc(u, 'vivo_agora', 'flutuante_usd', onde); }
+      r1.textContent = rdFmt.r(p.r_flutuante); r1.classList.add(p.r_flutuante > 0 ? 'rd-up' : p.r_flutuante < 0 ? 'rd-down' : 'rd-chg'); rdSrc(r1, r.fonte, 'r_flutuante', onde);
+      if (typeof p.flutuante_usd === 'number') { u.textContent = rdFmt.usdS(p.flutuante_usd); u.classList.add(p.flutuante_usd >= 0 ? 'rd-up' : 'rd-down'); rdSrc(u, r.fonte, 'flutuante_usd', onde); }
     }
     row.append(r1, u);
     el.append(row);
   });
 });
 dash.draw('vivo-cards', (el) => {
-  const r = dash.data('vivo_agora');
+  const r = rdVivoLista();
   el.replaceChildren();
-  if (r.status !== 'ok' || !Array.isArray(r.data)) { rdFail(el, 'vivo_agora'); return; }
+  if (r.status !== 'ok' || !Array.isArray(r.data)) { rdFail(el, r.fonte); return; }
   if (!r.data.length) { rdEmpty(el, 'Nenhum trade em andamento agora. Os novos aparecem aqui assim que a equipe publicar um sinal.'); return; }
   const agora = Date.now();
   rdOrdemRisco(r.data).forEach((p) => {
-    const onde = rdWhereId(p.id), fonte = 'vivo_agora';
+    const onde = rdWhereId(p.id), fonte = r.fonte;
     const c = rdEl('article', 'rd-futcard'); c.dataset.dir = p.direcao || '';
     const top = rdEl('div', 'rd-futtop');
     const dir = rdSrc(rdEl('span', 'rd-dir', p.direcao + ' · ' + (RD_VIVO_STATUS[p.status] || p.status)), fonte, 'status', onde);
@@ -2000,7 +2043,7 @@ dash.draw('vivo-eventos', (el) => {
   setInterval(() => {
     if (document.hidden) return;
     n += 1;
-    if (document.getElementById('aba-vivo') && !document.getElementById('aba-vivo').hidden) dash.refresh('precos_vivo');
+    dash.refresh('precos_vivo');  // a Visão geral e a Carteira também usam o preço ao vivo
     if (n % 2 === 0) dash.refresh('ao_vivo');
     if (n % 10 === 0) ['futuros', 'carteira', 'briefings', 'scanner'].forEach((id) => dash.refresh(id));
   }, 30000);
