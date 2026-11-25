@@ -492,7 +492,7 @@
   <div class="rd-panel" id="aba-vivo" role="tabpanel" aria-labelledby="tab-vivo" hidden>
   <section id="ao-vivo">
     <h2 class="rd-h2">Sinais abertos, ao vivo</h2>
-    <p class="rd-sub">Cada operação em andamento da carteira fictícia: quanto está rendendo, quanto falta para o stop e para o alvo, o melhor e o pior momento desde a entrada e quando vence o prazo. Com a página aberta, o preço vem do CoinGecko e se atualiza sozinho a cada 30 segundos (preço médio do mercado, que pode diferir um pouco do da OKX). O monitor confere oficialmente a cada hora, pelo preço da OKX, e é ele que decide se bateu o stop ou o alvo.</p>
+    <p class="rd-sub">Cada operação em andamento da carteira fictícia: quanto está rendendo, quanto falta para o stop e para o alvo, o melhor e o pior momento desde a entrada e quando vence o prazo. Com a página aberta, o preço vem do CoinGecko e se atualiza sozinho a cada 30 segundos (preço médio do mercado, que pode diferir um pouco do da OKX). O monitor confere oficialmente a cada 2 horas (e a equipe, a cada 4), pelo preço da OKX, e é ele que decide se bateu o stop ou o alvo.</p>
     <div class="rd-vivo-top" data-draw="vivo-topo" data-source="ao_vivo vivo_resumo vivo_resumo_conf"></div>
     <div class="rd-placar rd-vivo-tiles" data-draw="vivo-tiles" data-source="vivo_resumo vivo_resumo_conf"></div>
     <div class="rd-fut" data-draw="vivo-cards" data-source="vivo_agora ao_vivo_posicoes"></div>
@@ -1721,13 +1721,13 @@ const rdDuracao = (ms) => {
   const h = Math.floor(m / 60);
   return h < 24 ? h + 'h' + String(m % 60).padStart(2, '0') : Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
 };
-// Próxima conferência: o monitor roda aos 29 min de toda hora e a equipe aos 59 min das horas 0, 4, 8... (UTC)
+// Próxima conferência: o monitor roda aos 29 min das horas ímpares e a equipe aos 59 min das horas 0, 4, 8... (UTC)
 const rdProximaConferencia = (agora) => {
   const t = new Date(agora); t.setUTCSeconds(0, 0);
   for (let i = 0; i < 24 * 60; i++) {
     t.setUTCMinutes(t.getUTCMinutes() + 1);
     const mi = t.getUTCMinutes(), h = t.getUTCHours();
-    if (mi === 29 || (mi === 59 && h % 4 === 0)) return t;
+    if ((mi === 29 && h % 2 === 1) || (mi === 59 && h % 4 === 0)) return t;
   }
   return null;
 };
@@ -1757,9 +1757,9 @@ dash.draw('vivo-topo', {
         s0.append(pulso, st === 'loading' ? 'Buscando preços ao vivo…' : st === 'connect' || st === 'declined' ? 'Preços da conferência (o preço ao vivo precisa da permissão do CoinGecko)' : 'Preços da conferência (preço ao vivo indisponível agora)');
       }
       el.append(s0);
-      item('Conferido há ', rdDuracao(idade), idade > 75 * 60000 ? 'rd-down' : '');
-      if (idade > 75 * 60000) {
-        // o monitor roda de hora em hora: passou disso, alguma conferência não aconteceu
+      const ATRASO_MS = 135 * 60000;  // o monitor roda a cada 2 horas: passou disso, alguma conferência não aconteceu
+      item('Conferido há ', rdDuracao(idade), idade > ATRASO_MS ? 'rd-down' : '');
+      if (idade > ATRASO_MS) {
         const av = rdEl('span', 'rd-chip-risco', 'conferência atrasada: o monitor não atualiza há ' + rdDuracao(idade) + '; stop e alvo só são confirmados quando ele voltar');
         el.append(av);
       }

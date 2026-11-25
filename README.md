@@ -57,7 +57,7 @@ O documento da carteira também guarda o **placar completo** de todos os sinais,
 
 ## Trades ao vivo
 
-[`scripts/monitor.py`](scripts/monitor.py) acompanha cada trade em andamento. Ele roda **a cada hora** numa tarefa própria, leve, sem notícias nem análise, e também dentro de cada rodada completa. Em cada execução ele:
+[`scripts/monitor.py`](scripts/monitor.py) acompanha cada trade em andamento. Ele roda **a cada 2 horas** (aos 29 minutos das horas ímpares, UTC) numa tarefa própria, leve, sem notícias nem análise, e também dentro de cada rodada completa. Em cada execução ele:
 
 - confere os sinais (com o `avaliar_sinais.py`) e atualiza a carteira (com o `carteira.py`);
 - pega o último preço de cada moeda na OKX e monta o quadro de cada trade: resultado flutuante em R e em US$, folga até o stop, quanto falta para o alvo, o melhor e o pior momento desde a entrada (MFE/MAE) e quando vence o prazo;
