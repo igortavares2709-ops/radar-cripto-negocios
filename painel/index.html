@@ -1028,7 +1028,8 @@ dash.draw('chart-postura', (el) => {
         const w = t.getComputedTextLength ? t.getComputedTextLength() : 60;
         const cx = Number((this.getAttribute('transform') || '').replace(/[^0-9.,-]/g, '').split(',')[0]) || 0;
         const ini = cx - w / 2 - 6;
-        if (ini < fim || cx - w / 2 < 0 || cx + w / 2 > W) { this.style.display = 'none'; return; }
+        // não deixa uma data invadir os números do eixo vertical (à esquerda de m.l) nem sair à direita
+        if (ini < fim || cx - w / 2 < m.l || cx + w / 2 > W) { this.style.display = 'none'; return; }
         fim = cx + w / 2;
       });
     });
