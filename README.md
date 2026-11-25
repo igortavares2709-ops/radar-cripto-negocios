@@ -58,9 +58,19 @@ Limitação: o gatilho do condicional conta só o toque no preço, sem exigir o 
 
 ## Rodar a análise técnica localmente
 
+Só algumas moedas:
+
 ```bash
 python3 scripts/analise_tecnica.py BTC ETH SOL
 ```
+
+Radar de todas as criptos com perpétuo USDT na OKX e mais de US$ 1 milhão negociado em 24h (sem ações, commodities e stablecoins; leva uns 3 minutos):
+
+```bash
+python3 scripts/analise_tecnica.py --todas --saida ta.json --scanner scanner.json > resumo.json
+```
+
+`resumo.json` traz as moedas com setup, das mais fortes para as mais fracas; `scanner.json` é a tabela que o painel mostra na aba Radar.
 
 Para conferir sinais, salve-os numa lista JSON (campos `id`, `at`, `ativo`, `direcao`, `tipo`, `entrada`, `stop`, `alvo1`, `alvo2`) e rode:
 

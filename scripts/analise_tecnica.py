@@ -1,18 +1,43 @@
 #!/usr/bin/env python3
 """Análise técnica multi-timeframe de futuros perpétuos (dados públicos da OKX).
 
-Uso: python3 analise_tecnica.py [BTC ETH SOL ...]
-Saída: JSON com indicadores por ativo e timeframe, derivativos e um setup sugerido.
+Uso:
+  python3 analise_tecnica.py BTC ETH SOL
+      analisa só as moedas pedidas e imprime o JSON completo.
+  python3 analise_tecnica.py --todas [--min-vol 1000000] [--saida ta.json] [--scanner scanner.json] [--top 12]
+      varre TODAS as criptos com perpétuo USDT na OKX (instCategory 1, sem ações nem commodities,
+      sem stablecoins) com volume de 24h acima de --min-vol dólares. Grava o JSON completo em --saida,
+      a tabela compacta do radar em --scanner e imprime um resumo com os melhores candidatos.
 Só biblioteca padrão. Nada aqui é recomendação de investimento.
 """
-import json, sys, urllib.request, time
+import argparse, json, sys, threading, time, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 API = "https://www.okx.com/api/v5"
 TFS = {"1D": 300, "4H": 300, "1H": 300}
+ESTAVEIS = {"USDC", "USDT", "DAI", "FDUSD", "TUSD", "USDE", "PYUSD", "USDD", "BUSD", "USD1", "RLUSD", "USDG"}
+
+# limites da OKX por IP (com folga): candles 40/2s, funding 20/2s, rubik 5/2s
+_LIMITES = {"/market/": 12.0, "/public/": 6.0, "/rubik/": 2.0}
+_proxima = {k: 0.0 for k in _LIMITES}
+_trava = threading.Lock()
+
+
+def _esperar(path):
+    grupo = next((g for g in _LIMITES if path.startswith(g)), None)
+    if not grupo:
+        return
+    with _trava:
+        agora = time.monotonic()
+        quando = max(agora, _proxima[grupo])
+        _proxima[grupo] = quando + 1.0 / _LIMITES[grupo]
+    if quando > agora:
+        time.sleep(quando - agora)
 
 
 def get(path):
     for i in range(3):
+        _esperar(path)
         try:
             req = urllib.request.Request(API + path, headers={"User-Agent": "Mozilla/5.0 radar-analise/1.0"})
             with urllib.request.urlopen(req, timeout=20) as r:
@@ -21,7 +46,7 @@ def get(path):
                 return d["data"]
         except Exception:
             pass
-        time.sleep(1.5)
+        time.sleep(1.5 * (i + 1))
     return None
 
 
@@ -169,15 +194,103 @@ def setup(a, d):
     return out
 
 
+def analisar(ccy):
+    inst = f"{ccy}-USDT-SWAP"
+    tfs = {tf: tf_analysis(inst, tf, n) for tf, n in TFS.items()}
+    d = derivativos(ccy, inst)
+    return {"timeframes": tfs, "derivativos": d, "setup": setup(tfs, d)}
+
+
+def universo(min_vol):
+    """Todas as criptos com perpétuo USDT ativo na OKX, com volume de 24h em dólares >= min_vol."""
+    inst = get("/public/instruments?instType=SWAP") or []
+    tick = {t["instId"]: t for t in (get("/market/tickers?instType=SWAP") or [])}
+    out = []
+    for x in inst:
+        iid = x.get("instId", "")
+        if not iid.endswith("-USDT-SWAP") or x.get("instCategory") != "1" or x.get("ruleType") != "normal" or x.get("state") != "live":
+            continue
+        ccy = iid.split("-")[0]
+        if ccy in ESTAVEIS or iid not in tick:
+            continue
+        t = tick[iid]
+        try:
+            last, open24, volccy = float(t["last"]), float(t["open24h"]), float(t["volCcy24h"])
+        except (KeyError, ValueError):
+            continue
+        vol = volccy * last
+        if vol >= min_vol:
+            out.append({"ativo": ccy, "preco": last, "var_24h": rd((last / open24 - 1) * 100) if open24 else None, "vol_usd_m": rd(vol / 1e6)})
+    return sorted(out, key=lambda r: -r["vol_usd_m"])
+
+
+def linha_radar(base, a):
+    """Uma linha compacta da tabela do radar (o que o painel mostra para cada moeda)."""
+    tf, d, st = a["timeframes"], a["derivativos"], a["setup"]
+    d1, h4, h1 = tf.get("1D"), tf.get("4H"), tf.get("1H")
+    plano = None
+    if st.get("entrada") is not None:
+        plano = {"direcao": st["direcao"], "tipo": "imediato", "entrada": st["entrada"], "stop": st["stop"], "alvo1": st["alvo1"], "alvo2": st["alvo2"]}
+    elif st.get("plano_condicional"):
+        pc = st["plano_condicional"]
+        plano = {"direcao": pc["direcao"], "tipo": "condicional", "entrada": pc["entrada"], "stop": pc["stop"], "alvo1": pc["alvo1"], "alvo2": pc["alvo2"]}
+    return dict(base, **{
+        "t1d": d1 and d1["tendencia"], "t4h": h4 and h4["tendencia"], "t1h": h1 and h1["tendencia"],
+        "rsi_1d": d1 and d1["rsi14"], "rsi_4h": h4 and h4["rsi14"],
+        "ema200_1d": d1 and d1["ema200"], "suporte": h4 and (h4["suportes"] or [None])[0], "resistencia": h4 and (h4["resistencias"] or [None])[0],
+        "funding": d.get("funding_8h_pct"), "oi_7d": d.get("oi_var_7d_pct"), "long_short": d.get("long_short_contas"),
+        "pontuacao": st.get("pontuacao"), "setup": st.get("direcao"), "motivos": st.get("motivos", []), "plano": plano,
+    })
+
+
 def main():
-    ativos = [a.upper() for a in sys.argv[1:]] or ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE"]
-    res = {"gerado_em": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "fonte": "OKX perpétuos USDT", "ativos": {}}
-    for ccy in ativos:
-        inst = f"{ccy}-USDT-SWAP"
-        tfs = {tf: tf_analysis(inst, tf, n) for tf, n in TFS.items()}
-        d = derivativos(ccy, inst)
-        res["ativos"][ccy] = {"timeframes": tfs, "derivativos": d, "setup": setup(tfs, d)}
-    json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ativos", nargs="*")
+    ap.add_argument("--todas", action="store_true")
+    ap.add_argument("--min-vol", type=float, default=1_000_000)
+    ap.add_argument("--saida")
+    ap.add_argument("--scanner")
+    ap.add_argument("--top", type=int, default=12)
+    ap.add_argument("--threads", type=int, default=6)
+    args = ap.parse_args()
+    agora = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    if not args.todas:
+        ativos = [a.upper() for a in args.ativos] or ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE"]
+        res = {"gerado_em": agora, "fonte": "OKX perpétuos USDT", "ativos": {}}
+        for ccy in ativos:
+            res["ativos"][ccy] = analisar(ccy)
+        json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
+        return
+
+    uni = universo(args.min_vol)
+    if not uni:
+        print(json.dumps({"erro": "não consegui listar as moedas da OKX"}, ensure_ascii=False)); sys.exit(1)
+    with ThreadPoolExecutor(max_workers=args.threads) as ex:
+        res_list = list(ex.map(lambda b: (b, analisar(b["ativo"])), uni))
+    completo = {"gerado_em": agora, "fonte": "OKX perpétuos USDT (todas as criptos com volume)", "min_vol_usd": args.min_vol, "ativos": {}}
+    linhas, falhas = [], []
+    for base, a in res_list:
+        if not (a["timeframes"].get("1D") and a["timeframes"].get("4H") and a["timeframes"].get("1H")):
+            falhas.append(base["ativo"]); continue
+        completo["ativos"][base["ativo"]] = dict(a, ticker=base)
+        linhas.append(linha_radar(base, a))
+    if args.saida:
+        json.dump(completo, open(args.saida, "w"), ensure_ascii=False)
+    if args.scanner:
+        doc = {"at": agora, "min_vol_usd": args.min_vol, "total": len(linhas), "falhas": falhas,
+               "moedas_json": json.dumps(linhas, ensure_ascii=False, separators=(",", ":"))}
+        json.dump(doc, open(args.scanner, "w"), ensure_ascii=False)
+    # candidatos: moedas com setup (imediato ou condicional), mais fortes primeiro
+    cand = [l for l in linhas if l["plano"]]
+    cand.sort(key=lambda l: (-(l["plano"]["tipo"] == "imediato"), -abs(l["pontuacao"] or 0), -l["vol_usd_m"]))
+    resumo = {
+        "gerado_em": agora, "moedas_analisadas": len(linhas), "falhas": falhas, "min_vol_usd": args.min_vol,
+        "com_setup": len(cand), "vies_alta": sum(1 for l in linhas if (l["pontuacao"] or 0) >= 3),
+        "vies_baixa": sum(1 for l in linhas if (l["pontuacao"] or 0) <= -3),
+        "candidatos": [dict(l, detalhe=completo["ativos"][l["ativo"]]) for l in cand[:args.top]],
+    }
+    json.dump(resumo, sys.stdout, ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

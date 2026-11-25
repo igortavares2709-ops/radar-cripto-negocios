@@ -142,12 +142,60 @@
 .rd-more .rd-m-o, .rd-more[aria-expanded="true"] .rd-m-c { display: none; }
 .rd-more[aria-expanded="true"] .rd-m-o { display: inline; }
 @media print { .rd-collapsed tbody tr:nth-child(n+13) { display: table-row; } .rd-more { display: none; } }
+/* Radar de oportunidades */
+.rd-radarstats { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); margin-bottom: var(--cds-gap-md); }
+.rd-stat { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 4px 12px; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.rd-stat b { font-weight: var(--cds-font-weight-medium); }
+.rd-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; margin-bottom: var(--cds-gap-md); }
+.rd-search { flex: 1 1 200px; min-width: 0; font: inherit; color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 8px 14px; }
+.rd-search:focus-visible, .rd-field input:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
+.rd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-chip { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.rd-chip:hover { color: var(--color-fg); border-color: var(--color-fg-muted); }
+.rd-chip[aria-pressed="true"] { color: var(--color-bg); background: var(--color-fg); border-color: var(--color-fg); }
+.rd-sortable th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+.rd-sortable th[data-sort]:hover { color: var(--color-fg); }
+.rd-sortable th[aria-sort="ascending"]::after { content: " ▲"; font-size: 9px; }
+.rd-sortable th[aria-sort="descending"]::after { content: " ▼"; font-size: 9px; }
+.rd-radarrow { cursor: pointer; }
+.rd-radarrow:hover td { background: color-mix(in srgb, var(--color-fg) 4%, transparent); }
+.rd-radarrow[aria-expanded="true"] td { background: color-mix(in srgb, var(--color-fg) 6%, transparent); }
+.rd-tr { display: inline-flex; gap: 2px; font-size: 13px; line-height: 1; }
+.rd-tr span { width: 16px; text-align: center; }
+.rd-tr .up { color: var(--color-ok); } .rd-tr .dn { color: var(--color-bad); } .rd-tr .fl { color: var(--color-fg-muted); }
+.rd-score { display: inline-grid; grid-template-columns: 46px auto; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.rd-score i { position: relative; height: 6px; border-radius: 3px; background: var(--color-border-line); overflow: hidden; }
+.rd-score i b { position: absolute; top: 0; bottom: 0; }
+.rd-setup { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.rd-setup[data-d="LONG"] { color: var(--color-ok); } .rd-setup[data-d="SHORT"] { color: var(--color-bad); } .rd-setup[data-d=""] { color: var(--color-fg-muted); }
+.rd-liq { font-size: 10px; color: var(--color-warn); display: block; }
+.rd-detail td { background: var(--color-bg); }
+.rd-detailgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cds-gap-sm) var(--cds-gap-lg); padding: var(--cds-pad-sm) 0; font-size: var(--cds-font-size-caption); }
+.rd-detailgrid div { min-width: 0; }
+.rd-detailgrid dt { color: var(--color-fg-muted); }
+.rd-detailgrid dd { margin: 0; font-variant-numeric: tabular-nums; }
+.rd-why { margin: 4px 0 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.rd-count { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: var(--cds-gap-sm) 0 0; }
+/* Calculadora */
+.rd-calc { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); padding: var(--cds-pad-md); display: grid; gap: var(--cds-gap-sm); margin-bottom: var(--cds-gap-md); }
+.rd-calchead { display: flex; flex-wrap: wrap; gap: 4px var(--cds-gap-md); align-items: baseline; }
+.rd-calcrow { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); }
+.rd-field { display: grid; gap: 4px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); flex: 1 1 160px; min-width: 0; }
+.rd-field input { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: 8px; padding: 8px 10px; width: 100%; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+.rd-pos { border-top: 1px dashed var(--color-border-line); padding-top: var(--cds-gap-sm); font-size: var(--cds-font-size-caption); line-height: 1.5; }
+.rd-pos b { font-variant-numeric: tabular-nums; }
+/* Cartões que trocam o gráfico */
+.rd-tile[data-ativo] { cursor: pointer; transition: border-color .15s; }
+.rd-tile[data-ativo]:hover { border-color: var(--color-fg-muted); }
+.rd-tile.rd-sel { border-color: var(--color-fg); box-shadow: inset 0 0 0 1px var(--color-fg); }
+.rd-tile[data-ativo]:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+@media print { .rd-controls, .rd-calc { display: none; } }
 </style>
 
 <div class="rd">
   <header class="rd-hero" id="topo">
     <div class="rd-head">
-      <p class="rd-kicker">Equipe de 5 agentes de IA · roda a cada 4 horas</p>
+      <p class="rd-kicker">Equipe de 3 agentes de IA · radar de todas as criptos · roda a cada 4 horas</p>
       <h1 class="rd-title">Radar Cripto &amp; Negócios</h1>
       <p class="rd-take" data-draw="resumo" data-source="briefings" data-field="resumo">—</p>
       <div class="rd-meta">
@@ -164,6 +212,7 @@
 
   <div class="rd-tabs" role="tablist" aria-label="Partes do painel">
     <button class="rd-tab" type="button" role="tab" id="tab-visao" aria-controls="visao" aria-selected="true" data-tab="visao">Visão geral</button>
+    <button class="rd-tab" type="button" role="tab" id="tab-radar" aria-controls="aba-radar" aria-selected="false" tabindex="-1" data-tab="aba-radar">Radar <span class="rd-badge" data-draw="badge-radar" data-source="radar"></span></button>
     <button class="rd-tab" type="button" role="tab" id="tab-futuros" aria-controls="aba-futuros" aria-selected="false" tabindex="-1" data-tab="aba-futuros">Futuros <span class="rd-badge" data-draw="badge-fut" data-source="resumo_futuros"></span></button>
     <button class="rd-tab" type="button" role="tab" id="tab-oportunidades" aria-controls="oportunidades" aria-selected="false" tabindex="-1" data-tab="oportunidades">Oportunidades</button>
     <button class="rd-tab" type="button" role="tab" id="tab-equipe" aria-controls="aba-equipe" aria-selected="false" tabindex="-1" data-tab="aba-equipe">O que a equipe viu</button>
@@ -177,11 +226,11 @@
       <div><dt>Sinal condicional</dt><dd>Só vale se o preço chegar até a entrada indicada. Se não chegar em 48 horas, o sinal expira.</dd></div>
       <div><dt>Entrada, stop e alvos</dt><dd>Entrada é onde se abre a operação. Stop é onde se sai com prejuízo pequeno se a ideia estiver errada. Alvos 1 e 2 são onde se realiza o lucro.</dd></div>
       <div><dt>R (múltiplo do risco)</dt><dd>1R é o quanto se perde se o stop for atingido. +2R é ganhar o dobro do que se arriscou; -1R é perder o que se arriscou.</dd></div>
-      <div><dt>Mesa de decisão</dt><dd>Revisão final de cada sinal, com os princípios que grandes traders de futuros ensinam publicamente. Dá uma nota de 0 a 10 e só aprova com nota 7 ou mais.</dd></div>
       <div><dt>Medo e Ganância</dt><dd>Índice de 0 a 100 do humor do mercado. Abaixo de 25 é medo extremo; acima de 75 é ganância extrema.</dd></div>
+      <div><dt>Pontuação do radar</dt><dd>Soma de -9 a +9 que o script dá a cada moeda: tendência nos gráficos diário, de 4 horas e de 1 hora, força do MACD e funding. +5 ou mais é viés forte de alta; -5 ou menos, de baixa.</dd></div>
       <div><dt>RSI</dt><dd>Mede se o preço subiu ou caiu rápido demais. Abaixo de 30 é sobrevenda; acima de 70 é sobrecompra.</dd></div>
       <div><dt>Funding</dt><dd>Taxa que quem está comprado paga a quem está vendido (ou o contrário) nos futuros. Funding alto indica muita gente apostando na alta.</dd></div>
-      <div><dt>Nível: calmo, atenção, alerta</dt><dd>A avaliação geral do gestor de risco. Alerta só para algo grave, como queda de mais de 8% em um dia ou hack de corretora.</dd></div>
+      <div><dt>Nível: calmo, atenção, alerta</dt><dd>A avaliação geral do analista de mercado. Alerta só para algo grave, como queda de mais de 8% em um dia ou hack de corretora.</dd></div>
     </dl>
     <p class="rd-qd">Nada aqui é recomendação de investimento. Futuros com alavancagem podem zerar a margem.</p>
   </details>
@@ -199,13 +248,19 @@
         <p class="rd-qq">Tem sinal para operar?</p>
         <p class="rd-qa" data-draw="q-sinal" data-source="resumo_futuros" data-field="aprovados">—</p>
         <p class="rd-qd" data-draw="q-sinal-d">—</p>
-        <button class="rd-golink" type="button" data-go="aba-futuros">Ver os sinais e a mesa de decisão</button>
+        <button class="rd-golink" type="button" data-go="aba-futuros">Ver os sinais de futuros</button>
       </article>
       <article class="rd-q" id="q-placar">
         <p class="rd-qq">Os sinais estão dando certo?</p>
         <p class="rd-qa" data-draw="q-placar" data-source="placar" data-field="r_total" data-row="0">—</p>
         <p class="rd-qd" data-draw="q-placar-d">—</p>
         <button class="rd-golink" type="button" data-go="desempenho">Ver o histórico de sinais</button>
+      </article>
+      <article class="rd-q" id="q-radar">
+        <p class="rd-qq">O que o radar vê agora?</p>
+        <p class="rd-qa" data-draw="q-radar" data-source="radar">—</p>
+        <p class="rd-qd" data-draw="q-radar-d">—</p>
+        <button class="rd-golink" type="button" data-go="aba-radar">Abrir o radar de todas as moedas</button>
       </article>
       <article class="rd-q" id="q-proxima">
         <p class="rd-qq">Quando sai a próxima análise?</p>
@@ -217,21 +272,21 @@
 
   <section id="mercado-agora">
     <h2 class="rd-h2">Mercado na última rodada</h2>
-    <p class="rd-sub">A linha em cada cartão mostra o caminho do preço ao longo das rodadas.</p>
+    <p class="rd-sub">A linha em cada cartão mostra o caminho do preço ao longo das rodadas. Clique em Bitcoin, Ethereum ou Solana para ver a moeda no gráfico grande.</p>
     <div class="rd-tiles">
-      <div class="rd-tile" id="tile-btc">
+      <div class="rd-tile" id="tile-btc" data-ativo="btc" role="button" tabindex="0" aria-pressed="false">
         <span class="rd-lbl">Bitcoin</span>
         <span class="rd-big" data-draw="v-btc" data-source="briefings" data-field="btc">—</span>
         <span class="rd-chg" data-draw="c-btc" data-source="briefings" data-field="btc_24h">—</span>
         <div class="rd-spark" data-draw="sp-btc" data-source="briefings"></div>
       </div>
-      <div class="rd-tile" id="tile-eth">
+      <div class="rd-tile" id="tile-eth" data-ativo="eth" role="button" tabindex="0" aria-pressed="false">
         <span class="rd-lbl">Ethereum</span>
         <span class="rd-big" data-draw="v-eth" data-source="briefings" data-field="eth">—</span>
         <span class="rd-chg" data-draw="c-eth" data-source="briefings" data-field="eth_24h">—</span>
         <div class="rd-spark" data-draw="sp-eth" data-source="briefings"></div>
       </div>
-      <div class="rd-tile" id="tile-sol">
+      <div class="rd-tile" id="tile-sol" data-ativo="sol" role="button" tabindex="0" aria-pressed="false">
         <span class="rd-lbl">Solana</span>
         <span class="rd-big" data-draw="v-sol" data-source="briefings" data-field="sol">—</span>
         <span class="rd-chg" data-draw="c-sol" data-source="briefings" data-field="sol_24h">—</span>
@@ -255,8 +310,8 @@
   <section id="grafico">
     <div class="rd-grid2">
       <div class="rd-card" id="grafico-btc">
-        <h3 class="rd-h3">Bitcoin e sentimento ao longo das rodadas</h3>
-        <div class="rd-legend"><span><i data-draw="lg-btc"></i>Preço do BTC (US$, à esquerda)</span><span><i class="rd-dot" data-draw="lg-fng"></i>Medo e Ganância (0 a 100, à direita)</span></div>
+        <h3 class="rd-h3"><span data-draw="chart-nome">Bitcoin</span> e sentimento ao longo das rodadas</h3>
+        <div class="rd-legend"><span><i data-draw="lg-btc"></i>Preço do <span data-draw="chart-sigla">BTC</span> (US$, à esquerda)</span><span><i class="rd-dot" data-draw="lg-fng"></i>Medo e Ganância (0 a 100, à direita)</span></div>
         <div class="rd-chart" data-draw="chart" data-source="briefings"></div>
       </div>
       <div class="rd-card" id="grafico-comparacao">
@@ -269,20 +324,62 @@
 
   <section id="sinais">
     <h2 class="rd-h2">Sinais de mercado</h2>
-    <p class="rd-sub">Os 12 mais recentes, marcados pelo analista e revisados pelo gestor de risco.</p>
+    <p class="rd-sub">Os 12 mais recentes, marcados pelo analista de mercado.</p>
     <ul class="rd-sinais" data-draw="sinais" data-source="sinais"></ul>
   </section>
   </div>
 
+  <div class="rd-panel" id="aba-radar" role="tabpanel" aria-labelledby="tab-radar" hidden>
+  <section id="radar">
+    <h2 class="rd-h2">Radar de oportunidades</h2>
+    <p class="rd-sub">Todas as criptomoedas com contrato perpétuo em dólar na OKX e mais de US$ 1 milhão negociado em 24 horas, analisadas a cada rodada. Clique numa linha para ver os níveis, ou num título de coluna para ordenar. As setas mostram a tendência nos gráficos diário, de 4 horas e de 1 hora. Moedas com pouco volume aparecem marcadas: nelas o preço pode pular o stop.</p>
+    <div class="rd-radarstats" data-draw="radar-stats" data-source="radar"></div>
+    <div class="rd-controls">
+      <input class="rd-search" id="radar-busca" type="search" placeholder="Buscar moeda (ex.: SOL)" aria-label="Buscar moeda" autocomplete="off">
+      <div class="rd-chips" role="group" aria-label="Filtrar moedas">
+        <button class="rd-chip" type="button" data-filtro="todas" aria-pressed="true">Todas</button>
+        <button class="rd-chip" type="button" data-filtro="alta" aria-pressed="false">Viés de alta</button>
+        <button class="rd-chip" type="button" data-filtro="baixa" aria-pressed="false">Viés de baixa</button>
+        <button class="rd-chip" type="button" data-filtro="imediato" aria-pressed="false">Setup imediato</button>
+        <button class="rd-chip" type="button" data-filtro="liquidas" aria-pressed="false">Mais de US$ 5 mi/dia</button>
+      </div>
+    </div>
+    <div class="rd-tablewrap">
+      <table class="rd-table rd-sortable" id="tabela-radar" data-source="radar" data-row-key="ativo">
+        <thead><tr>
+          <th data-field="ativo" data-sort="ativo">Moeda</th>
+          <th data-field="preco" class="rd-num" data-sort="preco">Preço</th>
+          <th data-field="var_24h" class="rd-num" data-sort="var_24h">24h</th>
+          <th data-field="vol_usd_m" class="rd-num" data-sort="vol_usd_m">Volume 24h</th>
+          <th data-field="t1d">Tendência D · 4H · 1H</th>
+          <th data-field="rsi_1d" class="rd-num" data-sort="rsi_1d">RSI diário</th>
+          <th data-field="funding" class="rd-num" data-sort="funding">Funding</th>
+          <th data-field="pontuacao" data-sort="pontuacao" aria-sort="descending">Pontuação</th>
+          <th data-field="setup">Setup</th>
+        </tr></thead>
+        <tbody data-draw="radar-tabela"></tbody>
+      </table>
+    </div>
+    <p class="rd-count" data-draw="radar-contagem"></p>
+  </section>
+  </div>
+
   <div class="rd-panel" id="aba-futuros" role="tabpanel" aria-labelledby="tab-futuros" hidden>
-  <p class="rd-panelintro">Sinais para operar no mercado futuro de cripto. O analista técnico sugere, a mesa de decisão aprova ou veta, e cada sinal é conferido depois contra o preço real. Termos desconhecidos? Abra "Como ler este painel" abaixo das abas.</p>
+  <p class="rd-panelintro">Sinais para operar no mercado futuro de cripto. O analista técnico escolhe as melhores oportunidades no radar de todas as moedas, e cada sinal é conferido depois contra o preço real. Termos desconhecidos? Abra "Como ler este painel" abaixo das abas.</p>
 
 
 
   <section id="futuros">
     <h2 class="rd-h2">Sinais para o mercado futuro</h2>
     <p class="rd-sub">Do analista técnico: tendência em 3 tempos gráficos (1D, 4H, 1H), médias móveis, RSI, MACD, ATR, suportes e resistências, funding e open interest dos perpétuos da OKX, cruzados com as notícias. Sinal "condicional" só vale se o gatilho acontecer. Na régua de cada sinal, a faixa vermelha vai da entrada ao stop e a verde da entrada ao alvo 2.</p>
-    <p class="rd-sub">Antes de publicar, cada sinal passa pela <b>mesa de decisão</b>: uma revisão final com os princípios que grandes traders de futuros ensinam publicamente (Paul Tudor Jones, Stanley Druckenmiller, Peter Brandt, Linda Raschke, Ed Seykota e os Turtles). Ela dá uma nota de 0 a 10 e só aprova sinais com nota 7 ou mais e nenhum veto. Os sinais vetados aparecem como AGUARDAR, com o motivo.</p>
+    <p class="rd-sub">Quem decide os sinais é o analista técnico, a partir do radar de todas as moedas e das notícias. Só entram moedas com mais de US$ 5 milhões negociados por dia. Os sinais de 23 e 24/11 ainda mostram o parecer da mesa de decisão que existia na época.</p>
+    <div class="rd-calc" id="calculadora">
+      <div class="rd-calchead"><b>Calculadora de posição</b><span class="rd-qd">Preencha e cada sinal mostra o tamanho da operação para você. Fica salvo só neste navegador.</span></div>
+      <div class="rd-calcrow">
+        <label class="rd-field" for="calc-capital"><span>Seu capital (US$)</span><input id="calc-capital" type="number" min="0" step="50" inputmode="decimal" placeholder="ex.: 1000"></label>
+        <label class="rd-field" for="calc-risco"><span>Risco por operação (%)</span><input id="calc-risco" type="number" min="0.1" max="5" step="0.1" value="1" inputmode="decimal"></label>
+      </div>
+    </div>
     <p class="rd-warn">Futuros com alavancagem podem zerar a margem rapidamente. Ninguém acerta sempre: use sempre o stop, arrisque no máximo 1–2% do capital por operação e trate isto como análise, não como recomendação.</p>
     <div class="rd-fut" data-draw="futuros" data-source="futuros"></div>
   </section>
@@ -302,6 +399,13 @@
         <p class="rd-sub">Em múltiplos do risco (R). Acima de zero, a soma dos sinais está ganhando.</p>
         <div class="rd-chart rd-short" data-draw="chart-curva" data-source="curva_r"></div>
       </div>
+    </div>
+    <div class="rd-chips" role="group" aria-label="Filtrar histórico de sinais" style="margin-bottom: var(--cds-gap-sm)">
+      <button class="rd-chip" type="button" data-hist="todos" aria-pressed="true">Todos</button>
+      <button class="rd-chip" type="button" data-hist="andamento" aria-pressed="false">Em andamento</button>
+      <button class="rd-chip" type="button" data-hist="lucro" aria-pressed="false">Com lucro</button>
+      <button class="rd-chip" type="button" data-hist="stop" aria-pressed="false">Stop</button>
+      <button class="rd-chip" type="button" data-hist="expirado" aria-pressed="false">Expirados</button>
     </div>
     <div class="rd-tablewrap rd-collapsed" id="tabela-futuros">
       <table class="rd-table" data-source="futuros" data-row-key="id">
@@ -327,39 +431,12 @@
   </div>
 
   <div class="rd-panel" id="oportunidades" role="tabpanel" aria-labelledby="tab-oportunidades" hidden>
-  <p class="rd-panelintro">Ideias de negócio que estão captando investimento no mundo, e formas de ganhar dinheiro na internet que dá para começar do Brasil. Cada uma tem fonte e nota de risco.</p>
-  <section id="ideias">
-    <h2 class="rd-h2">Banco de ideias de negócio</h2>
-    <p class="rd-sub">Risco de 1 (baixo) a 5 (alto), na nota do gestor de risco. As mais novas primeiro.</p>
-    <div class="rd-grid2" style="margin-bottom: var(--cds-gap-lg)">
-      <div class="rd-card" id="grafico-temas">
-        <h3 class="rd-h3">Temas que mais aparecem</h3>
-        <div class="rd-bars" data-draw="bars-temas" data-source="temas"></div>
-      </div>
-      <div class="rd-card" id="grafico-risco-ideias">
-        <h3 class="rd-h3">Ideias por nota de risco</h3>
-        <div class="rd-bars" data-draw="bars-risco" data-source="risco_ideias"></div>
-      </div>
-    </div>
-    <div class="rd-tablewrap rd-collapsed" id="tabela-ideias">
-      <table class="rd-table" data-source="ideias" data-row-key="id">
-        <thead><tr>
-          <th data-field="titulo">Ideia</th>
-          <th data-field="setor">Setor</th>
-          <th data-field="regiao">Onde surgiu</th>
-          <th data-field="angulo_br">Como trazer ao Brasil</th>
-          <th data-field="risco">Risco</th>
-          <th data-field="fonte">Fonte</th>
-        </tr></thead>
-        <tbody data-draw="ideias"></tbody>
-      </table>
-    </div>
-    <button class="rd-more" type="button" data-more="tabela-ideias" aria-expanded="false"><span class="rd-m-c">Mostrar todas as ideias</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
-  </section>
+  <p class="rd-panelintro">Formas de ganhar dinheiro na internet que dá para começar do Brasil, encontradas pelo caçador de renda digital, cada uma com fonte e nota de risco. Mais abaixo, o banco de ideias de negócio guardado até 25/11.</p>
+
 
   <section id="renda">
     <h2 class="rd-h2">Oportunidades de renda digital</h2>
-    <p class="rd-sub">Do caçador de renda digital: modelos de renda na internet que estão crescendo agora, com custo para começar, tempo até a primeira renda e os primeiros passos. Risco de 1 (baixo) a 5 (alto), na nota do gestor de risco. As mais novas primeiro.</p>
+    <p class="rd-sub">Do caçador de renda digital: modelos de renda na internet que estão crescendo agora, com custo para começar, tempo até a primeira renda e os primeiros passos. Risco de 1 (baixo) a 5 (alto), na nota do próprio caçador. As mais novas primeiro.</p>
     <p class="rd-warn">Desconfie de qualquer promessa de renda rápida ou garantida. Os prazos e valores aqui são estimativas da equipe a partir das fontes citadas, não garantias.</p>
     <div class="rd-grid2" style="margin-bottom: var(--cds-gap-lg)">
       <div class="rd-card" id="grafico-modelos">
@@ -388,6 +465,35 @@
     <button class="rd-more" type="button" data-more="tabela-renda" aria-expanded="false"><span class="rd-m-c">Mostrar todas as oportunidades</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
   </section>
 
+  <section id="ideias">
+    <h2 class="rd-h2">Banco de ideias de negócio (até 25/11)</h2>
+    <p class="rd-sub">Ideias do antigo caçador de negócios, que saiu da equipe em 25/11. Risco de 1 (baixo) a 5 (alto). As mais novas primeiro.</p>
+    <div class="rd-grid2" style="margin-bottom: var(--cds-gap-lg)">
+      <div class="rd-card" id="grafico-temas">
+        <h3 class="rd-h3">Temas que mais aparecem</h3>
+        <div class="rd-bars" data-draw="bars-temas" data-source="temas"></div>
+      </div>
+      <div class="rd-card" id="grafico-risco-ideias">
+        <h3 class="rd-h3">Ideias por nota de risco</h3>
+        <div class="rd-bars" data-draw="bars-risco" data-source="risco_ideias"></div>
+      </div>
+    </div>
+    <div class="rd-tablewrap rd-collapsed" id="tabela-ideias">
+      <table class="rd-table" data-source="ideias" data-row-key="id">
+        <thead><tr>
+          <th data-field="titulo">Ideia</th>
+          <th data-field="setor">Setor</th>
+          <th data-field="regiao">Onde surgiu</th>
+          <th data-field="angulo_br">Como trazer ao Brasil</th>
+          <th data-field="risco">Risco</th>
+          <th data-field="fonte">Fonte</th>
+        </tr></thead>
+        <tbody data-draw="ideias"></tbody>
+      </table>
+    </div>
+    <button class="rd-more" type="button" data-more="tabela-ideias" aria-expanded="false"><span class="rd-m-c">Mostrar todas as ideias</span><span class="rd-m-o">Mostrar só as 12 mais recentes</span></button>
+  </section>
+
   </div>
 
   <div class="rd-panel" id="aba-equipe" role="tabpanel" aria-labelledby="tab-equipe" hidden>
@@ -400,20 +506,10 @@
         <p class="rd-role">Preços, fluxos, on-chain e movimentos fora do normal</p>
         <p class="rd-text" data-draw="txt-mercado" data-source="briefings" data-field="mercado">—</p>
       </article>
-      <article class="rd-agent" id="agente-negocios">
-        <h3><span class="rd-ico" aria-hidden="true">🧭</span>Caçador de negócios</h3>
-        <p class="rd-role">Startups, rodadas, tendências e o que dá para trazer ao Brasil</p>
-        <p class="rd-text" data-draw="txt-negocios" data-source="briefings" data-field="negocios">—</p>
-      </article>
       <article class="rd-agent" id="agente-renda">
         <h3><span class="rd-ico" aria-hidden="true">💡</span>Caçador de renda digital</h3>
         <p class="rd-role">Novas formas de ganhar dinheiro na internet que dá para começar do Brasil</p>
         <p class="rd-text" data-draw="txt-renda" data-source="briefings" data-field="renda">—</p>
-      </article>
-      <article class="rd-agent" id="agente-risco">
-        <h3><span class="rd-ico" aria-hidden="true">🛡️</span>Gestor de risco</h3>
-        <p class="rd-role">Revisa os outros agentes, aponta riscos e golpes</p>
-        <p class="rd-text" data-draw="txt-risco" data-source="briefings" data-field="risco">—</p>
       </article>
     </div>
   </section>
@@ -454,7 +550,7 @@ window.rdFail = (el, id) => { if (dash.data(id).status === 'error') rdEmpty(el, 
 
 <script>
 // Textos e números da última rodada
-[['resumo', 'resumo'], ['txt-mercado', 'mercado'], ['txt-negocios', 'negocios'], ['txt-renda', 'renda'], ['txt-risco', 'risco']].forEach(([name, field]) => {
+[['resumo', 'resumo'], ['txt-mercado', 'mercado'], ['txt-renda', 'renda']].forEach(([name, field]) => {
   dash.draw(name, (el) => {
     const b = rdLatest();
     if (!b) { el.textContent = dash.data('briefings').status === 'ok' ? 'A equipe ainda não fez a primeira rodada.' : '—'; return; }
@@ -540,16 +636,17 @@ RD_TILES.forEach((t) => {
 dash.draw('lg-btc', (el) => { el.style.background = dash.colors[0]; });
 dash.draw('lg-fng', (el) => { el.style.background = dash.colors[1]; });
 dash.draw('chart', (el) => {
+  const k = rdState.ativo, [nome, sigla] = RD_ATIVO_NOME[k];
   const rows = rdRows('briefings');
   el.replaceChildren();
   if (!rows) { rdFail(el, 'briefings'); return; }
-  const data = rows.filter((r) => r.btc != null).map((r) => ({...r, d: new Date(r.at)})).sort((a, b) => a.d - b.d);
+  const data = rows.filter((r) => r[k] != null).map((r) => ({...r, d: new Date(r.at)})).sort((a, b) => a.d - b.d);
   if (data.length < 2) { rdEmpty(el, 'O gráfico aparece a partir da segunda rodada (' + data.length + ' até agora).'); return; }
   const W = el.clientWidth || 600, H = 240, m = {t: 12, r: 36, b: 26, l: 70};
   const x = d3.scaleTime().domain(d3.extent(data, (d) => d.d)).range([m.l, W - m.r]);
-  const y = d3.scaleLinear().domain(d3.extent(data, (d) => d.btc)).nice().range([H - m.b, m.t]);
+  const y = d3.scaleLinear().domain(d3.extent(data, (d) => d[k])).nice().range([H - m.b, m.t]);
   const y2 = d3.scaleLinear().domain([0, 100]).range([H - m.b, m.t]);
-  const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Preço do Bitcoin e índice de Medo e Ganância por rodada');
+  const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Preço do ' + nome + ' e índice de Medo e Ganância por rodada');
   const grad = svg.append('defs').append('linearGradient').attr('id', 'rd-btc-area').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
   grad.append('stop').attr('offset', '0%').style('stop-color', dash.colors[0]).style('stop-opacity', 0.25);
   grad.append('stop').attr('offset', '100%').style('stop-color', dash.colors[0]).style('stop-opacity', 0);
@@ -558,8 +655,8 @@ dash.draw('chart', (el) => {
   svg.append('g').attr('transform', `translate(${W - m.r},0)`).call(d3.axisRight(y2).ticks(4).tickSize(0)).call((g) => g.select('.domain').remove());
   svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 120))).tickFormat(d3.timeFormat('%d/%m %Hh')))
     .call((g) => g.selectAll('line,path').style('stroke', 'var(--cds-chart-axis)'));
-  svg.append('path').datum(data).attr('fill', 'url(#rd-btc-area)').attr('d', d3.area().x((d) => x(d.d)).y0(H - m.b).y1((d) => y(d.btc)));
-  svg.append('path').datum(data).attr('fill', 'none').style('stroke', dash.colors[0]).attr('stroke-width', 2).attr('d', d3.line().x((d) => x(d.d)).y((d) => y(d.btc)));
+  svg.append('path').datum(data).attr('fill', 'url(#rd-btc-area)').attr('d', d3.area().x((d) => x(d.d)).y0(H - m.b).y1((d) => y(d[k])));
+  svg.append('path').datum(data).attr('fill', 'none').style('stroke', dash.colors[0]).attr('stroke-width', 2).attr('d', d3.line().x((d) => x(d.d)).y((d) => y(d[k])));
   svg.append('g').selectAll('circle').data(data.filter((d) => d.fng != null)).join('circle').attr('cx', (d) => x(d.d)).attr('cy', (d) => y2(d.fng)).attr('r', 3).style('fill', dash.colors[1]);
   const tip = document.createElement('div'); tip.className = 'rd-tip'; tip.hidden = true; el.append(tip);
   const dot = svg.append('circle').attr('r', 4).style('fill', dash.colors[0]).style('display', 'none');
@@ -567,8 +664,8 @@ dash.draw('chart', (el) => {
     .on('pointermove', (ev) => {
       const [px] = d3.pointer(ev); const t = x.invert(px);
       const d = data.reduce((a, b) => Math.abs(b.d - t) < Math.abs(a.d - t) ? b : a);
-      dot.style('display', null).attr('cx', x(d.d)).attr('cy', y(d.btc));
-      tip.hidden = false; tip.textContent = rdFmt.when(d.at) + ' · BTC ' + rdFmt.usd(d.btc) + (d.fng != null ? ' · Medo/Ganância ' + d.fng : '');
+      dot.style('display', null).attr('cx', x(d.d)).attr('cy', y(d[k]));
+      tip.hidden = false; tip.textContent = rdFmt.when(d.at) + ' · ' + sigla + ' ' + rdFmt.usd(d[k]) + (d.fng != null ? ' · Medo/Ganância ' + d.fng : '');
       const sx = el.clientWidth / W; let left = x(d.d) * sx + 10; if (left > el.clientWidth - 240) left = x(d.d) * sx - 250;
       tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '4px';
     })
@@ -703,6 +800,7 @@ dash.draw('futuros', (el) => {
         dl.append(dt, dd);
       });
       c.append(dl);
+      if ((r.direcao === 'LONG' || r.direcao === 'SHORT') && r.stop != null) c.append(rdPosicao(r));
     }
     const t = document.createElement('p'); t.className = 'rd-text'; t.textContent = r.tese || ''; c.append(t);
     if (r.invalidacao) { const iv = document.createElement('p'); iv.className = 'rd-chg'; iv.textContent = 'Invalida se: ' + r.invalidacao; c.append(iv); }
@@ -874,8 +972,8 @@ dash.draw('historico-futuros', (tb) => {
   const rows = rdRows('futuros');
   tb.replaceChildren();
   if (!rows) return;
-  const ops = rows.filter((f) => f.direcao === 'LONG' || f.direcao === 'SHORT');
-  if (!ops.length) { const tr = tb.insertRow(); const td = tr.insertCell(); td.colSpan = 10; td.className = 'rd-empty'; td.textContent = 'Nenhum sinal LONG ou SHORT publicado ainda.'; return; }
+  const ops = rows.filter((f) => (f.direcao === 'LONG' || f.direcao === 'SHORT') && RD_HIST[rdState.hist](f));
+  if (!ops.length) { const tr = tb.insertRow(); const td = tr.insertCell(); td.colSpan = 10; td.className = 'rd-empty'; td.textContent = rdState.hist === 'todos' ? 'Nenhum sinal LONG ou SHORT publicado ainda.' : 'Nenhum sinal nesta situação.'; return; }
   ops.forEach((r) => {
     const tr = tb.insertRow(); tr.dataset.key = encodeURIComponent(r.id);
     tr.insertCell().textContent = rdFmt.when(r.at);
@@ -1024,7 +1122,7 @@ dash.draw('hist', (el) => {
     const det = document.createElement('details');
     const s = document.createElement('summary'); s.textContent = rdFmt.when(b.at) + ' · ' + (b.nivel || '') + ' · BTC ' + rdFmt.usd(b.btc);
     const t = document.createElement('p'); t.className = 'rd-text';
-    t.textContent = (b.resumo || '') + '\n\nMercado:\n' + (b.mercado || '') + '\n\nNegócios:\n' + (b.negocios || '') + (b.renda ? '\n\nRenda digital:\n' + b.renda : '') + '\n\nRisco:\n' + (b.risco || '') + (b.fontes ? '\n\nFontes:\n' + b.fontes : '');
+    t.textContent = (b.resumo || '') + '\n\nMercado:\n' + (b.mercado || '') + (b.negocios ? '\n\nNegócios:\n' + b.negocios : '') + (b.renda ? '\n\nRenda digital:\n' + b.renda : '') + (b.risco ? '\n\nRisco:\n' + b.risco : '') + (b.fontes ? '\n\nFontes:\n' + b.fontes : '');
     det.append(s, t); el.append(det);
   });
 });
@@ -1083,8 +1181,8 @@ dash.draw('q-sinal-d', (el) => {
   if (r.status !== 'ok' || !r.data || !r.data[0]) { el.textContent = '—'; return; }
   const d = r.data[0];
   const p = [];
-  if (d.aprovados > 0) p.push('A última rodada publicou ' + d.aprovados + (d.aprovados === 1 ? ' sinal aprovado' : ' sinais aprovados') + ' pela mesa de decisão.');
-  else p.push('Na última rodada, nenhuma operação passou pelos critérios.' + (d.vetados ? ' A mesa vetou ' + d.vetados + (d.vetados === 1 ? ' sinal.' : ' sinais.') : ''));
+  if (d.aprovados > 0) p.push('A última rodada publicou ' + d.aprovados + (d.aprovados === 1 ? ' sinal de operação.' : ' sinais de operação.'));
+  else p.push('Na última rodada, o analista técnico não encontrou operação boa.');
   if (d.em_andamento) p.push(d.em_andamento + (d.em_andamento === 1 ? ' sinal anterior segue' : ' sinais anteriores seguem') + ' em andamento.');
   el.textContent = p.join(' ');
 });
@@ -1179,4 +1277,203 @@ document.querySelectorAll('[data-more]').forEach((b) => {
     b.setAttribute('aria-expanded', aberto ? 'true' : 'false');
   });
 });
+// ---------- Estado da página (filtros, ordem, moeda do gráfico, calculadora) ----------
+window.RD_ATIVO_NOME = {btc: ['Bitcoin', 'BTC'], eth: ['Ethereum', 'ETH'], sol: ['Solana', 'SOL']};
+window.RD_HIST = {
+  todos: () => true,
+  andamento: (f) => ['aguardando', 'aberto', 'alvo1 (aberto)'].includes(f.status),
+  lucro: (f) => typeof f.resultado_r === 'number' && f.resultado_r > 0,
+  stop: (f) => f.status === 'stop',
+  expirado: (f) => f.status === 'expirado',
+};
+window.rdState = window.rdState || {ativo: 'btc', busca: '', filtro: 'todas', ordem: 'pontuacao', dir: -1, aberto: new Set(), hist: 'todos', capital: null, risco: 1};
+try {
+  const salvo = JSON.parse(localStorage.getItem('radar-calc') || '{}');
+  if (salvo.capital > 0) rdState.capital = Number(salvo.capital);
+  if (salvo.risco > 0) rdState.risco = Number(salvo.risco);
+} catch (e) { /* navegador sem armazenamento: segue com os padrões */ }
+
+// ---------- Radar de oportunidades ----------
+dash.calc('radar', {
+  title: 'Radar de oportunidades',
+  description: 'Uma linha por moeda da última varredura: preço, variação, volume, tendência em 3 tempos gráficos, RSI, funding, pontuação e setup sugerido pelo script de análise técnica.',
+  inputs: ['scanner'],
+  fn: (scanner) => {
+    const doc = Array.isArray(scanner) ? scanner[0] : scanner;
+    if (!doc) return [];
+    let m = doc.moedas_json ?? doc.moedas ?? [];
+    if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { m = []; } }
+    return (Array.isArray(m) ? m : []).map((r) => ({...r, at: doc.at, setup: r.plano ? r.plano.direcao : 'AGUARDAR', tipo_setup: r.plano ? r.plano.tipo : ''}));
+  },
+});
+const rdRadarRows = () => { const r = dash.data('radar'); return r.status === 'ok' && Array.isArray(r.data) ? r.data : null; };
+const RD_FILTROS = {
+  todas: () => true,
+  alta: (r) => (r.pontuacao || 0) >= 3,
+  baixa: (r) => (r.pontuacao || 0) <= -3,
+  imediato: (r) => r.tipo_setup === 'imediato',
+  liquidas: (r) => (r.vol_usd_m || 0) >= 5,
+};
+const rdTrend = (v) => { const sp = document.createElement('span'); sp.className = v > 0 ? 'up' : v < 0 ? 'dn' : 'fl'; sp.textContent = v > 0 ? '▲' : v < 0 ? '▼' : '•'; sp.title = 'tendência ' + (v > 0 ? '+' : '') + v; return sp; };
+const rdPct = (v, casas) => v == null ? '—' : (v > 0 ? '+' : '') + d3.format('.' + (casas ?? 2) + 'f')(v).replace('.', ',') + '%';
+
+dash.draw('badge-radar', (el) => {
+  const rows = rdRadarRows();
+  el.textContent = rows && rows.length ? String(rows.length) : '';
+  el.dataset.on = '0';
+  el.setAttribute('aria-label', rows ? rows.length + ' moedas no radar' : '');
+});
+
+dash.draw('radar-stats', (el) => {
+  const rows = rdRadarRows();
+  el.replaceChildren();
+  if (!rows) { rdFail(el, 'scanner'); return; }
+  if (!rows.length) { rdEmpty(el, 'O radar aparece depois da próxima rodada.'); return; }
+  const at = rows[0].at;
+  [['Varredura', at ? rdFmt.when(at) : '—'], ['Moedas analisadas', rows.length], ['Viés de alta', rows.filter(RD_FILTROS.alta).length], ['Viés de baixa', rows.filter(RD_FILTROS.baixa).length], ['Setup imediato', rows.filter(RD_FILTROS.imediato).length]].forEach(([l, v]) => {
+    const sp = document.createElement('span'); sp.className = 'rd-stat';
+    const b = document.createElement('b'); b.textContent = String(v);
+    sp.append(l + ': ', b); el.append(sp);
+  });
+});
+
+dash.draw('radar-tabela', (tb) => {
+  const rows = rdRadarRows();
+  tb.replaceChildren();
+  if (!rows) return;
+  const q = rdState.busca.trim().toUpperCase();
+  let lista = rows.filter(RD_FILTROS[rdState.filtro]).filter((r) => !q || String(r.ativo).toUpperCase().includes(q));
+  const k = rdState.ordem, dir = rdState.dir;
+  lista = lista.slice().sort((a, b) => {
+    const va = a[k], vb = b[k];
+    if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
+    if (typeof va === 'string') return dir * va.localeCompare(vb);
+    return dir * (va - vb);
+  });
+  if (!lista.length) { const tr = tb.insertRow(); const td = tr.insertCell(); td.colSpan = 9; td.className = 'rd-empty'; td.textContent = rows.length ? 'Nenhuma moeda com esse filtro.' : 'O radar aparece depois da próxima rodada.'; return; }
+  lista.forEach((r) => {
+    const aberto = rdState.aberto.has(r.ativo);
+    const tr = tb.insertRow(); tr.className = 'rd-radarrow'; tr.dataset.key = encodeURIComponent(r.ativo);
+    tr.tabIndex = 0; tr.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+    const alterna = () => { if (rdState.aberto.has(r.ativo)) rdState.aberto.delete(r.ativo); else rdState.aberto.add(r.ativo); dash.draw('radar-tabela'); };
+    tr.onclick = alterna; tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alterna(); } };
+    const c1 = tr.insertCell(); const nb = document.createElement('b'); nb.textContent = r.ativo; c1.append(nb);
+    if ((r.vol_usd_m || 0) < 5) { const lq = document.createElement('span'); lq.className = 'rd-liq'; lq.textContent = 'liquidez baixa'; c1.append(lq); }
+    const c2 = tr.insertCell(); c2.className = 'rd-num'; c2.textContent = rdNum(r.preco);
+    const c3 = tr.insertCell(); c3.className = 'rd-num ' + ((r.var_24h || 0) >= 0 ? 'rd-up' : 'rd-down'); c3.textContent = rdPct(r.var_24h);
+    const c4 = tr.insertCell(); c4.className = 'rd-num'; c4.textContent = r.vol_usd_m == null ? '—' : 'US$ ' + (r.vol_usd_m >= 1000 ? rdFmt.dec(r.vol_usd_m / 1000, 1) + ' bi' : rdFmt.dec(r.vol_usd_m, r.vol_usd_m >= 100 ? 0 : 1) + ' mi');
+    const c5 = tr.insertCell(); const tw = document.createElement('span'); tw.className = 'rd-tr'; tw.append(rdTrend(r.t1d), rdTrend(r.t4h), rdTrend(r.t1h)); c5.append(tw);
+    const c6 = tr.insertCell(); c6.className = 'rd-num'; c6.textContent = r.rsi_1d == null ? '—' : rdFmt.dec(r.rsi_1d, 0);
+    if (r.rsi_1d != null && (r.rsi_1d < 30 || r.rsi_1d > 70)) c6.classList.add('rd-chg'), c6.title = r.rsi_1d < 30 ? 'sobrevenda' : 'sobrecompra';
+    const c7 = tr.insertCell(); c7.className = 'rd-num'; c7.textContent = r.funding == null ? '—' : rdPct(r.funding, 4);
+    const c8 = tr.insertCell(); const sc = document.createElement('span'); sc.className = 'rd-score';
+    const bar = document.createElement('i'); const fill = document.createElement('b'); const v = Math.max(-9, Math.min(9, r.pontuacao || 0));
+    fill.style.left = v >= 0 ? '50%' : (50 + v / 9 * 50) + '%'; fill.style.width = Math.abs(v) / 9 * 50 + '%'; fill.style.background = v >= 0 ? 'var(--color-ok)' : 'var(--color-bad)';
+    bar.append(fill); const num = document.createElement('span'); num.textContent = (v > 0 ? '+' : '') + v; sc.append(bar, num); c8.append(sc);
+    const c9 = tr.insertCell(); const st = document.createElement('span'); st.className = 'rd-setup'; st.dataset.d = r.plano ? r.plano.direcao : '';
+    st.textContent = r.plano ? r.plano.direcao + (r.plano.tipo === 'condicional' ? ' cond.' : '') : 'aguardar'; c9.append(st);
+    if (aberto) {
+      const dr = tb.insertRow(); dr.className = 'rd-detail'; const td = dr.insertCell(); td.colSpan = 9;
+      const g = document.createElement('dl'); g.className = 'rd-detailgrid';
+      const item = (dt, dd) => { const w = document.createElement('div'); const a = document.createElement('dt'); a.textContent = dt; const b = document.createElement('dd'); b.textContent = dd; w.append(a, b); g.append(w); };
+      if (r.plano) {
+        item('Setup sugerido', r.plano.direcao + ' ' + r.plano.tipo);
+        item('Entrada', rdNum(r.plano.entrada)); item('Stop', rdNum(r.plano.stop)); item('Alvo 1 · Alvo 2', rdNum(r.plano.alvo1) + ' · ' + rdNum(r.plano.alvo2));
+      }
+      item('Suporte · Resistência (4H)', rdNum(r.suporte) + ' · ' + rdNum(r.resistencia));
+      item('Média de 200 dias', rdNum(r.ema200_1d));
+      item('RSI 4H', r.rsi_4h == null ? '—' : rdFmt.dec(r.rsi_4h, 0));
+      item('Open interest em 7 dias', r.oi_7d == null ? '—' : rdPct(r.oi_7d, 1));
+      item('Contas compradas por vendida', r.long_short == null ? '—' : rdFmt.dec(r.long_short, 2));
+      td.append(g);
+      if (r.motivos && r.motivos.length) { const w = document.createElement('p'); w.className = 'rd-why'; w.textContent = 'Por que essa pontuação: ' + r.motivos.join('; ') + '.'; td.append(w); }
+      const av = document.createElement('p'); av.className = 'rd-why'; av.textContent = 'Setup calculado pelo script, antes da análise do analista técnico. Não é sinal publicado nem recomendação.'; td.append(av);
+    }
+  });
+});
+
+dash.draw('radar-contagem', (el) => {
+  const rows = rdRadarRows();
+  if (!rows) { el.textContent = ''; return; }
+  const q = rdState.busca.trim().toUpperCase();
+  const n = rows.filter(RD_FILTROS[rdState.filtro]).filter((r) => !q || String(r.ativo).toUpperCase().includes(q)).length;
+  el.textContent = 'Mostrando ' + n + ' de ' + rows.length + ' moedas.';
+});
+
+dash.draw('q-radar', (el) => {
+  const rows = rdRadarRows();
+  if (!rows || !rows.length) { el.textContent = '—'; return; }
+  const alta = rows.filter(RD_FILTROS.alta).length, baixa = rows.filter(RD_FILTROS.baixa).length;
+  el.textContent = baixa > alta * 2 ? 'Maioria em baixa' : alta > baixa * 2 ? 'Maioria em alta' : 'Mercado dividido';
+  el.dataset.tone = baixa > alta * 2 ? 'bad' : alta > baixa * 2 ? 'ok' : '';
+});
+dash.draw('q-radar-d', (el) => {
+  const rows = rdRadarRows();
+  if (!rows || !rows.length) { el.textContent = 'O radar aparece depois da próxima rodada.'; return; }
+  const alta = rows.filter(RD_FILTROS.alta).length, baixa = rows.filter(RD_FILTROS.baixa).length, im = rows.filter(RD_FILTROS.imediato).length;
+  el.textContent = rows.length + ' moedas analisadas: ' + alta + ' com viés de alta, ' + baixa + ' com viés de baixa e ' + im + ' com setup imediato pelo script.';
+});
+
+// ---------- Gráfico principal ----------
+dash.draw('chart-nome', (el) => { el.textContent = RD_ATIVO_NOME[rdState.ativo][0]; });
+dash.draw('chart-sigla', (el) => { el.textContent = RD_ATIVO_NOME[rdState.ativo][1]; });
+
+// ---------- Calculadora de posição ----------
+window.rdPosicao = (r) => {
+  const box = document.createElement('div'); box.className = 'rd-pos';
+  const cap = rdState.capital, rk = rdState.risco;
+  const dist = Math.abs(r.entrada - r.stop);
+  if (!(cap > 0) || !(rk > 0) || !(dist > 0)) { box.textContent = 'Preencha a calculadora acima para ver o tamanho desta operação no seu capital.'; return box; }
+  const riscoUsd = cap * rk / 100, qtd = riscoUsd / dist, nocional = qtd * r.entrada;
+  const alav = Math.max(1, Number(r.alavancagem_max) || 1), margem = nocional / alav;
+  const f = (v) => 'US$ ' + rdNum(v);
+  box.append('Com ', Object.assign(document.createElement('b'), {textContent: f(cap)}), ' e risco de ', Object.assign(document.createElement('b'), {textContent: rdFmt.dec(rk, 1) + '%'}),
+    ': se o stop for atingido você perde ', Object.assign(document.createElement('b'), {textContent: f(riscoUsd)}), '. Posição de ', Object.assign(document.createElement('b'), {textContent: rdNum(qtd) + ' ' + r.ativo}),
+    ' (≈ ', Object.assign(document.createElement('b'), {textContent: f(nocional)}), '), usando ', Object.assign(document.createElement('b'), {textContent: f(margem)}), ' de margem a ' + alav + 'x.');
+  if (r.alvo2 != null) box.append(' No alvo 2, o ganho seria de ', Object.assign(document.createElement('b'), {textContent: f(qtd * Math.abs(r.alvo2 - r.entrada))}), '.');
+  if (margem > cap) box.append(' Atenção: a margem passa do seu capital; reduza o risco por operação.');
+  return box;
+};
+
+// ---------- Controles ----------
+(() => {
+  const busca = document.getElementById('radar-busca');
+  if (busca) busca.addEventListener('input', () => { rdState.busca = busca.value; dash.draw('radar-tabela'); dash.draw('radar-contagem'); });
+  document.querySelectorAll('[data-filtro]').forEach((b) => b.addEventListener('click', () => {
+    rdState.filtro = b.dataset.filtro;
+    document.querySelectorAll('[data-filtro]').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    dash.draw('radar-tabela'); dash.draw('radar-contagem');
+  }));
+  document.querySelectorAll('#tabela-radar th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (rdState.ordem === k) rdState.dir = -rdState.dir; else { rdState.ordem = k; rdState.dir = k === 'ativo' ? 1 : -1; }
+    document.querySelectorAll('#tabela-radar th[data-sort]').forEach((x) => { if (x === th) x.setAttribute('aria-sort', rdState.dir > 0 ? 'ascending' : 'descending'); else x.removeAttribute('aria-sort'); });
+    dash.draw('radar-tabela');
+  }));
+  document.querySelectorAll('[data-hist]').forEach((b) => b.addEventListener('click', () => {
+    rdState.hist = b.dataset.hist;
+    document.querySelectorAll('[data-hist]').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    const w = document.getElementById('tabela-futuros'); if (w && rdState.hist !== 'todos') w.classList.remove('rd-collapsed');
+    dash.draw('historico-futuros');
+  }));
+  const tiles = document.querySelectorAll('.rd-tile[data-ativo]');
+  const marca = () => tiles.forEach((t) => { const on = t.dataset.ativo === rdState.ativo; t.classList.toggle('rd-sel', on); t.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  tiles.forEach((t) => {
+    const escolhe = () => { rdState.ativo = t.dataset.ativo; marca(); dash.draw('chart'); dash.draw('chart-nome'); dash.draw('chart-sigla'); };
+    t.addEventListener('click', escolhe);
+    t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); escolhe(); } });
+  });
+  marca();
+  const cap = document.getElementById('calc-capital'), rk = document.getElementById('calc-risco');
+  if (cap && rdState.capital) cap.value = rdState.capital;
+  if (rk && rdState.risco) rk.value = rdState.risco;
+  const salva = () => {
+    rdState.capital = cap && cap.value ? Number(cap.value) : null;
+    rdState.risco = rk && rk.value ? Number(rk.value) : 1;
+    try { localStorage.setItem('radar-calc', JSON.stringify({capital: rdState.capital, risco: rdState.risco})); } catch (e) { /* sem armazenamento */ }
+    dash.draw('futuros');
+  };
+  if (cap) cap.addEventListener('input', salva);
+  if (rk) rk.addEventListener('input', salva);
+})();
 </script>

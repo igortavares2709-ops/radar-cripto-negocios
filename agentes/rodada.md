@@ -6,7 +6,7 @@ A cada rodada, a sessão baixa a versão mais nova de `scripts/analise_tecnica.p
 
 1. **Memória:** ler as últimas 6 rodadas (`data/radar/briefings`), os últimos sinais de futuros (`data/radar/futuros`) e o banco de ideias (`data/radar/ideias`).
 2. **Dados de mercado:** CoinGecko `coins/markets`, `global` e `search/trending`; alternative.me `fng`; DeFiLlama `v2/chains`.
-3. **Análise gráfica:** `python3 scripts/analise_tecnica.py BTC ETH SOL XRP BNB DOGE`.
+3. **Análise gráfica (radar de todas as moedas):** `python3 scripts/analise_tecnica.py --todas --saida ta.json --scanner scanner.json > resumo.json`. A tabela `scanner.json` vai para o painel (aba Radar) e o analista técnico escolhe os sinais entre os candidatos do resumo, só em moedas com mais de US$ 5 milhões negociados por dia.
    **Conferência:** `python3 scripts/avaliar_sinais.py sinais.json` com todos os sinais do painel. O resultado vai para os campos `status`, `resultado_r`, `acionado_em`, `encerrado_em` e `verificado_em` de cada sinal. A rodada não mexe na entrada, no stop, nos alvos nem na tese de sinais antigos.
 4. **Notícias só de fontes fortes** (busca restrita por domínio):
    - Cripto: coindesk.com, theblock.co, decrypt.co, bloomberg.com, cnbc.com, sec.gov, farside.co.uk
