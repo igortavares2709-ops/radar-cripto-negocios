@@ -23,6 +23,8 @@ Só biblioteca padrão. Nada aqui é recomendação de investimento.
 import argparse
 import json
 import time
+import urllib.parse
+import urllib.request
 from typing import Dict, List, Optional
 
 import avaliar_sinais as av
@@ -62,12 +64,36 @@ def precos_atuais() -> Dict[str, float]:
     return out
 
 
+COINGECKO_MARKETS = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&include_tokens=top&symbols="
+
+
+def ids_coingecko(simbolos: List[str]) -> Dict[str, str]:
+    """Código do CoinGecko de cada símbolo (ex.: VVV -> venice-token), para o painel buscar o preço
+    ao vivo. Quando um símbolo tem várias moedas, vale a de maior valor de mercado. {} se a API falhar."""
+    simbolos = sorted({s.lower() for s in simbolos if s})
+    if not simbolos:
+        return {}
+    try:
+        url = COINGECKO_MARKETS + urllib.parse.quote(",".join(simbolos))
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 radar-cripto/1.0", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            moedas = json.load(r)
+    except Exception:
+        return {}
+    melhor: Dict[str, dict] = {}
+    for m in moedas if isinstance(moedas, list) else []:
+        sim = str(m.get("symbol", "")).lower()
+        if sim in simbolos and (sim not in melhor or (m.get("market_cap") or 0) > (melhor[sim].get("market_cap") or 0)):
+            melhor[sim] = m
+    return {sim.upper(): m["id"] for sim, m in melhor.items() if m.get("id")}
+
+
 def excursao(p: Plano, candles: Optional[dict], desde_ms: int, preco: float):
     """Melhor (MFE) e pior (MAE) momento da operação desde que abriu, em R."""
     hs, ls = [preco], [preco]
     if candles:
         for t, h, l in zip(candles["t"], candles["h"], candles["l"]):
-            if t >= desde_ms - 3600_000:  # inclui o candle em que a operação abriu
+            if t >= desde_ms:  # acionado_em já é o começo do candle em que a operação abriu
                 hs.append(h)
                 ls.append(l)
     if p.sgn > 0:
@@ -169,6 +195,9 @@ def monitorar(sinais: List[dict], anterior: dict, agora_ms: Optional[int] = None
             if pos:
                 posicoes.append(pos)
     posicoes.sort(key=lambda x: (x["status"] == "aguardando", str(x.get("at"))))
+    cg = ids_coingecko([str(p.get("ativo", "")) for p in posicoes])
+    for p in posicoes:
+        p["cg_id"] = cg.get(str(p.get("ativo", "")).upper())
     agora = iso(agora_ms)
     novos = eventos(sinais, depois, extrato, agora)
     try:

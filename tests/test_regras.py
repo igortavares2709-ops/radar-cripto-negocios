@@ -378,10 +378,11 @@ class TestMonitor(unittest.TestCase):
     """Quadro ao vivo e eventos (LONG: entrada 100, stop 90, alvo1 115, alvo2 130)."""
 
     def setUp(self):
-        self.orig_get, self.orig_candles = mon.okx.get, av.candles_1h
+        self.orig_get, self.orig_candles, self.orig_cg = mon.okx.get, av.candles_1h, mon.ids_coingecko
+        mon.ids_coingecko = lambda simbolos: {"BTC": "bitcoin"}
 
     def tearDown(self):
-        mon.okx.get, av.candles_1h = self.orig_get, self.orig_candles
+        mon.okx.get, av.candles_1h, mon.ids_coingecko = self.orig_get, self.orig_candles, self.orig_cg
 
     def rodar(self, sinais, preco, k, anterior=None):
         mon.okx.get = lambda p: [{"instId": "BTC-USDT-SWAP", "last": str(preco)}] if "tickers" in p else None
@@ -400,6 +401,34 @@ class TestMonitor(unittest.TestCase):
         # 1% de 2000 = US$ 20 de risco; 0,5R = +10, menos a taxa de entrada (0,05% de 200)
         self.assertAlmostEqual(p["flutuante_usd"], 9.9)
         self.assertEqual(r["novos"], [])
+        self.assertEqual(p["cg_id"], "bitcoin")
+
+    def test_ids_coingecko_escolhe_o_maior_valor_de_mercado(self):
+        import io
+        resposta = json.dumps([{"symbol": "mon", "id": "monad", "market_cap": 100},
+                               {"symbol": "mon", "id": "mon-falso", "market_cap": 5},
+                               {"symbol": "vvv", "id": "venice-token", "market_cap": 9}]).encode()
+
+        class R(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        orig = mon.urllib.request.urlopen
+        mon.urllib.request.urlopen = lambda req, timeout=None: R(resposta)
+        try:
+            self.assertEqual(self.orig_cg(["MON", "VVV", "XYZ"]), {"MON": "monad", "VVV": "venice-token"})
+        finally:
+            mon.urllib.request.urlopen = orig
+        mon.urllib.request.urlopen = lambda req, timeout=None: (_ for _ in ()).throw(OSError("sem rede"))
+        try:
+            self.assertEqual(self.orig_cg(["BTC"]), {})
+        finally:
+            mon.urllib.request.urlopen = orig
+
+    def test_excursao_ignora_candles_antes_da_entrada(self):
+        # o candle anterior à entrada foi a 130 (alvo 2), mas a operação só abriu no candle seguinte
+        k = candles((130, 100, 101), (104, 98, 102), t0=T0)
+        mfe, mae = mon.excursao(Plano(1, 100.0, 90.0, 115.0, 130.0), k, T0 + HORA, 102.0)
+        self.assertEqual((mfe, mae), (0.4, -0.2))
 
     def test_aguardando_mostra_distancia_ate_a_entrada(self):
         s = sinal(tipo="condicional", entrada=95, stop=85, alvo1=110, alvo2=125, status="aguardando")

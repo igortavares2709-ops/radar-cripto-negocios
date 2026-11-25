@@ -63,7 +63,7 @@ O documento da carteira também guarda o **placar completo** de todos os sinais,
 - pega o último preço de cada moeda na OKX e monta o quadro de cada trade: resultado flutuante em R e em US$, folga até o stop, quanto falta para o alvo, o melhor e o pior momento desde a entrada (MFE/MAE) e quando vence o prazo;
 - grava o quadro em `data/radar/ao_vivo/atual` e, quando um trade é acionado, bate um alvo, bate o stop ou vence, manda um **aviso no celular**.
 
-No painel, a aba **Ao vivo** mostra esses cartões com a régua de preço (stop, entrada, alvos e o preço agora) e os últimos avisos. A página busca os números novos sozinha a cada minuto. O painel não consegue consultar a OKX direto (a página só lê o próprio banco), por isso o preço é o da última conferência, de no máximo 1 hora atrás.
+No painel, a aba **Ao vivo** mostra esses cartões com a régua de preço (stop, entrada, alvos e o preço agora) e os últimos avisos. Com a página aberta, o preço vem **ao vivo do conector CoinGecko** e se atualiza sozinho a cada 30 segundos: o resultado em R e em US$, as distâncias até o stop e o alvo e o melhor e o pior momento são refeitos na hora, com as mesmas contas do monitor. O monitor grava o código do CoinGecko de cada moeda (`cg_id`, achado pela API pública pelo símbolo, ficando com a de maior valor de mercado). O preço do CoinGecko é a média do mercado à vista e pode diferir um pouco do perpétuo da OKX; quem decide oficialmente se bateu o stop ou o alvo é a conferência do monitor, pelo preço da OKX. Sem o conector, a aba mostra o preço da última conferência.
 
 ## Arquivamento (para o painel não travar com o tempo)
 
