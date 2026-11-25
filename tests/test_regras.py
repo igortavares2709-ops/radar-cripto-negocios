@@ -369,3 +369,91 @@ class TestArquivoEPlacar(unittest.TestCase):
                   sinal(id="e", status="aguardando"), sinal(id="f", direcao="AGUARDAR")]
         self.assertEqual(ct.placar(sinais), {"publicados": 5, "acionados": 3, "encerrados": 2, "abertos": 1,
                                               "expirados": 1, "taxa_acerto": 50, "r_total": 1.25})
+
+
+import monitor as mon  # noqa: E402
+
+
+class TestMonitor(unittest.TestCase):
+    """Quadro ao vivo e eventos (LONG: entrada 100, stop 90, alvo1 115, alvo2 130)."""
+
+    def setUp(self):
+        self.orig_get, self.orig_candles = mon.okx.get, av.candles_1h
+
+    def tearDown(self):
+        mon.okx.get, av.candles_1h = self.orig_get, self.orig_candles
+
+    def rodar(self, sinais, preco, k, anterior=None):
+        mon.okx.get = lambda p: [{"instId": "BTC-USDT-SWAP", "last": str(preco)}] if "tickers" in p else None
+        av.candles_1h = lambda ccy, desde=None: k
+        return mon.monitorar(sinais, anterior or {}, agora_ms=T0 + 10 * HORA)
+
+    def test_trade_aberto_mostra_flutuante_distancias_e_excursao(self):
+        k = candles((108, 99, 105), (110, 96, 104))
+        r = self.rodar([sinal(status="aberto")], 105.0, k)
+        p = json.loads(r["ao_vivo"]["posicoes_json"])[0]
+        self.assertEqual((p["status"], p["r_flutuante"]), ("aberto", 0.5))
+        self.assertAlmostEqual(p["dist_stop_pct"], rd2(15 / 105 * 100))
+        self.assertAlmostEqual(p["dist_alvo_pct"], rd2(10 / 105 * 100))
+        self.assertEqual((p["mfe_r"], p["mae_r"]), (1.0, -0.4))
+        self.assertEqual(p["prazo_fim"], iso(T0 + 168 * HORA))
+        # 1% de 2000 = US$ 20 de risco; 0,5R = +10, menos a taxa de entrada (0,05% de 200)
+        self.assertAlmostEqual(p["flutuante_usd"], 9.9)
+        self.assertEqual(r["novos"], [])
+
+    def test_aguardando_mostra_distancia_ate_a_entrada(self):
+        s = sinal(tipo="condicional", entrada=95, stop=85, alvo1=110, alvo2=125, status="aguardando")
+        r = self.rodar([s], 100.0, candles((101, 98, 100)))
+        p = json.loads(r["ao_vivo"]["posicoes_json"])[0]
+        self.assertEqual(p["status"], "aguardando")
+        self.assertAlmostEqual(p["dist_entrada_pct"], 5.0)
+        self.assertEqual(p["prazo_fim"], iso(T0 + 48 * HORA))
+
+    def test_evento_de_stop_sai_da_lista_de_posicoes_e_guarda_historico(self):
+        anterior = {"eventos_json": json.dumps([{"t": "x", "id": "velho", "texto": "antigo"}])}
+        r = self.rodar([sinal(status="aberto")], 88.0, candles((101, 89, 92)), anterior)
+        self.assertEqual([e["status"] for e in r["novos"]], ["stop"])
+        self.assertEqual(r["novos"][0]["r"], -1.0)
+        self.assertLess(r["novos"][0]["resultado_usd"], 0)
+        self.assertEqual(json.loads(r["ao_vivo"]["posicoes_json"]), [])
+        self.assertEqual([e["id"] for e in json.loads(r["ao_vivo"]["eventos_json"])], ["f1", "velho"])
+        self.assertIn("stop", mon.resumo_texto(r))
+
+    def test_gatilho_acionado_vira_evento(self):
+        s = sinal(tipo="condicional", entrada=95, stop=85, alvo1=110, alvo2=125, status="aguardando")
+        r = self.rodar([s], 97.0, candles((101, 94, 97)))
+        self.assertEqual([e["status"] for e in r["novos"]], ["aberto"])
+
+    def test_sem_preco_da_okx_usa_o_ultimo_candle(self):
+        mon.okx.get = lambda p: None
+        av.candles_1h = lambda ccy, desde=None: candles((106, 99, 103))
+        r = mon.monitorar([sinal(status="aberto")], {}, agora_ms=T0 + 2 * HORA)
+        self.assertEqual(json.loads(r["ao_vivo"]["posicoes_json"])[0]["preco"], 103)
+
+    def test_ler_doc_aceita_envelope_e_arquivo_ausente(self):
+        self.assertEqual(mon.ler_doc(None), {})
+        self.assertEqual(mon.ler_doc("/nao/existe.json"), {})
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"id": "atual", "data": {"eventos_json": "[]"}}, f)
+        try:
+            self.assertEqual(mon.ler_doc(f.name), {"eventos_json": "[]"})
+        finally:
+            os.unlink(f.name)
+
+
+class TestCarteiraMesmoCandle(unittest.TestCase):
+    def test_trade_que_abre_e_fecha_no_mesmo_candle_conta(self):
+        # stop na primeira hora: acionado_em == encerrado_em; antes o prejuízo sumia (US$ 0)
+        s = sinal(id="a", status="stop", resultado_r=-1.0, acionado_em="2026-11-20T01:00:00Z",
+                  encerrado_em="2026-11-20T01:00:00Z")
+        doc = ct.carteira([s], ct.Regras())
+        self.assertAlmostEqual(doc["saldo"], rd2(2000 - 20 - 0.2))
+        self.assertEqual(doc["abertas"], 0)
+
+    def test_mesmo_candle_nao_muda_a_ordem_com_outros_trades(self):
+        # "a" sai às 05h (aberto antes); "b" abre e fecha às 05h: "b" arrisca 1% do saldo já com "a"
+        a = sinal(id="a", status="alvo2", resultado_r=2.25, acionado_em="2026-11-20T01:00:00Z", encerrado_em="2026-11-20T05:00:00Z")
+        b = sinal(id="b", status="stop", resultado_r=-1.0, acionado_em="2026-11-20T05:00:00Z", encerrado_em="2026-11-20T05:00:00Z")
+        extrato = json.loads(ct.carteira([b, a], ct.Regras())["extrato_json"])
+        self.assertEqual([x["id"] for x in extrato], ["a", "b"])
+        self.assertAlmostEqual(extrato[1]["risco_usd"], rd2(2044.8 * 0.01))

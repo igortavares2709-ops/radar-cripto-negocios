@@ -115,6 +115,20 @@
 .rd-tab:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
 .rd-badge { min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 11px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--color-fg-muted) 22%, transparent); color: inherit; }
 .rd-badge:empty { display: none; }
+/* Ao vivo */
+.rd-vivo-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm) var(--cds-gap-lg); margin-bottom: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.rd-vivo-top b { color: var(--color-fg); font-variant-numeric: tabular-nums; }
+.rd-pulso { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-ok); margin-right: 6px; vertical-align: middle; }
+.rd-pulso[data-velho="1"] { background: var(--color-warn); }
+@media (prefers-reduced-motion: no-preference) { .rd-pulso:not([data-velho="1"]) { animation: rd-pulsa 2s ease-in-out infinite; } }
+@keyframes rd-pulsa { 50% { opacity: 0.35; } }
+.rd-vivo-preco { display: flex; align-items: baseline; gap: var(--cds-gap-md); flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.rd-vivo-preco .rd-big { font-size: var(--cds-font-size-heading); }
+.rd-vivo-r { font-weight: var(--cds-font-weight-medium); }
+.rd-vivo-ladder svg { display: block; width: 100%; height: 70px; overflow: visible; }
+.rd-vivo-ladder text { font-size: 10px; fill: var(--cds-text-secondary); font-variant-numeric: tabular-nums; }
+.rd-vivo-ladder .rd-agora { font-size: 11px; font-weight: 600; fill: var(--color-fg); }
+.rd-vivo-ev li b { white-space: nowrap; }
 .rd-badge[data-on="1"] { background: var(--color-ok); color: var(--color-bg); }
 .rd-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--cds-gap-xl); }
 .rd-panel[hidden] { display: none; }
@@ -217,6 +231,7 @@
     <button class="rd-tab" type="button" role="tab" id="tab-visao" aria-controls="visao" aria-selected="true" data-tab="visao">Visão geral</button>
     <button class="rd-tab" type="button" role="tab" id="tab-radar" aria-controls="aba-radar" aria-selected="false" tabindex="-1" data-tab="aba-radar">Radar <span class="rd-badge" data-draw="badge-radar" data-source="radar"></span></button>
     <button class="rd-tab" type="button" role="tab" id="tab-futuros" aria-controls="aba-futuros" aria-selected="false" tabindex="-1" data-tab="aba-futuros">Futuros <span class="rd-badge" data-draw="badge-fut" data-source="resumo_futuros"></span></button>
+    <button class="rd-tab" type="button" role="tab" id="tab-vivo" aria-controls="aba-vivo" aria-selected="false" tabindex="-1" data-tab="aba-vivo">Ao vivo <span class="rd-badge" data-draw="badge-vivo" data-source="ao_vivo"></span></button>
     <button class="rd-tab" type="button" role="tab" id="tab-carteira" aria-controls="aba-carteira" aria-selected="false" tabindex="-1" data-tab="aba-carteira">Carteira</button>
     <button class="rd-tab" type="button" role="tab" id="tab-oportunidades" aria-controls="oportunidades" aria-selected="false" tabindex="-1" data-tab="oportunidades">Oportunidades</button>
     <button class="rd-tab" type="button" role="tab" id="tab-equipe" aria-controls="aba-equipe" aria-selected="false" tabindex="-1" data-tab="aba-equipe">O que a equipe viu</button>
@@ -233,6 +248,7 @@
       <div><dt>Medo e Ganância</dt><dd>Índice de 0 a 100 do humor do mercado. Abaixo de 25 é medo extremo; acima de 75 é ganância extrema.</dd></div>
       <div><dt>Pontuação do radar</dt><dd>Soma de -9 a +9 que o script dá a cada moeda: tendência nos gráficos diário, de 4 horas e de 1 hora, força do MACD e funding. +5 ou mais é viés forte de alta; -5 ou menos, de baixa.</dd></div>
       <div><dt>Qualidade e Top 10</dt><dd>Nota de 0 a 100 que o radar dá a cada moeda com plano. Junta o backtest do mesmo plano na própria moeda (quantas vezes deu lucro nos últimos ~50 dias e quanto rendeu), a confluência dos gráficos, o RSI, o volume e o posicionamento. As 10 maiores notas, sem backtest negativo e com mais de US$ 5 mi/dia, formam o Top 10. Só delas saem os sinais.</dd></div>
+      <div><dt>Melhor e pior momento</dt><dd>Na aba Ao vivo: o quanto a operação chegou a render (melhor) e a perder (pior) desde a entrada, em R. Mostra se ela já esteve perto do alvo ou do stop.</dd></div>
       <div><dt>Carteira fictícia</dt><dd>Uma conta de mentira que começou com US$ 2.000 e segue todos os sinais LONG/SHORT, arriscando 1% do saldo em cada um e pagando taxas. Mostra quanto o dinheiro teria rendido.</dd></div>
       <div><dt>RSI</dt><dd>Mede se o preço subiu ou caiu rápido demais. Abaixo de 30 é sobrevenda; acima de 70 é sobrecompra.</dd></div>
       <div><dt>Funding</dt><dd>Taxa que quem está comprado paga a quem está vendido (ou o contrário) nos futuros. Funding alto indica muita gente apostando na alta.</dd></div>
@@ -267,6 +283,7 @@
         <p class="rd-qa" data-draw="q-carteira" data-source="carteira" data-field="saldo" data-row="0">—</p>
         <p class="rd-qd" data-draw="q-carteira-d">—</p>
         <button class="rd-golink" type="button" data-go="aba-carteira">Ver a evolução do saldo</button>
+        <button class="rd-golink" type="button" data-go="aba-vivo">Acompanhar os trades ao vivo</button>
       </article>
       <article class="rd-q" id="q-radar">
         <p class="rd-qq">O que o radar vê agora?</p>
@@ -442,6 +459,19 @@
   </section>
 
 
+  </div>
+
+  <div class="rd-panel" id="aba-vivo" role="tabpanel" aria-labelledby="tab-vivo" hidden>
+  <section id="ao-vivo">
+    <h2 class="rd-h2">Trades ao vivo</h2>
+    <p class="rd-sub">Cada operação em andamento da carteira fictícia, pelo último preço da OKX: quanto está rendendo, quanto falta para o stop e para o alvo, o melhor e o pior momento desde a entrada e quando vence o prazo. O monitor confere os preços a cada hora (e a equipe, a cada 4 horas); esta página busca os números novos sozinha a cada minuto.</p>
+    <div class="rd-vivo-top" data-draw="vivo-topo" data-source="ao_vivo"></div>
+    <div class="rd-fut" data-draw="vivo-cards" data-source="ao_vivo_posicoes"></div>
+    <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Últimos avisos</h3>
+    <p class="rd-sub">Quando um trade é acionado, bate um alvo, bate o stop ou vence, aparece aqui e chega como aviso no celular.</p>
+    <ul class="rd-sinais rd-vivo-ev" data-draw="vivo-eventos" data-source="ao_vivo_eventos"></ul>
+    <p class="rd-warn">Simulação com a carteira fictícia: não é dinheiro real nem recomendação. Entre uma conferência e outra o preço pode bater o stop ou o alvo; o resultado oficial é o da próxima conferência.</p>
+  </section>
   </div>
 
   <div class="rd-panel" id="aba-carteira" role="tabpanel" aria-labelledby="tab-carteira" hidden>
@@ -1608,6 +1638,168 @@ dash.draw('q-carteira-d', (el) => {
   if (!c) { el.textContent = 'A carteira de US$ 2.000 aparece depois da próxima rodada.'; return; }
   el.textContent = 'Começou com ' + rdFmt.usd(c.saldo_inicial) + ' seguindo todos os sinais. ' + c.operacoes + ' operações encerradas' + (c.acerto_pct != null ? ', ' + rdFmt.dec(c.acerto_pct, 0) + '% com lucro' : '') + (c.abertas ? '; ' + c.abertas + ' em aberto.' : '.');
 });
+
+// ---------- Ao vivo ----------
+dash.calc('ao_vivo_doc', {
+  title: 'Quadro ao vivo (resumo)',
+  description: 'Resumo da última conferência do monitor: horário, saldo com o resultado das operações abertas, quantas estão abertas e quantas aguardam gatilho.',
+  inputs: ['ao_vivo'],
+  fn: (v) => { const d = Array.isArray(v) ? v[0] : v; if (!d) return []; const o = {...d}; delete o.posicoes_json; delete o.eventos_json; return [o]; },
+});
+dash.calc('ao_vivo_posicoes', {
+  title: 'Trades em andamento',
+  description: 'Uma linha por operação aberta ou aguardando gatilho, pelo último preço da OKX: resultado flutuante, distâncias até stop, alvo e entrada, melhor e pior momento e prazo.',
+  inputs: ['ao_vivo'],
+  fn: (v) => { const d = Array.isArray(v) ? v[0] : v; return d ? rdParse(d.posicoes_json).map((p) => ({...p, at_quadro: d.at})) : []; },
+});
+dash.calc('ao_vivo_eventos', {
+  title: 'Avisos dos trades',
+  description: 'As últimas mudanças de situação dos trades (acionado, alvo, stop, prazo), as mais recentes primeiro.',
+  inputs: ['ao_vivo'],
+  fn: (v) => { const d = Array.isArray(v) ? v[0] : v; return d ? rdParse(d.eventos_json) : []; },
+});
+const rdVivo = () => { const r = dash.data('ao_vivo_doc'); return r.status === 'ok' && Array.isArray(r.data) && r.data[0] ? r.data[0] : null; };
+// "há 12 min", "em 1d 4h"
+const rdDuracao = (ms) => {
+  const m = Math.max(0, Math.round(Math.abs(ms) / 60000));
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60);
+  return h < 24 ? h + 'h' + String(m % 60).padStart(2, '0') : Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+};
+// Próxima conferência: o monitor roda aos 29 min de toda hora e a equipe aos 59 min das horas 0, 4, 8... (UTC)
+const rdProximaConferencia = (agora) => {
+  const t = new Date(agora); t.setUTCSeconds(0, 0);
+  for (let i = 0; i < 24 * 60; i++) {
+    t.setUTCMinutes(t.getUTCMinutes() + 1);
+    const mi = t.getUTCMinutes(), h = t.getUTCHours();
+    if (mi === 29 || (mi === 59 && h % 4 === 0)) return t;
+  }
+  return null;
+};
+dash.draw('badge-vivo', (el) => {
+  const v = rdVivo();
+  el.textContent = v && v.abertas ? String(v.abertas) : '';
+  el.dataset.on = v && v.abertas ? '1' : '0';
+  el.setAttribute('aria-label', v ? v.abertas + ' trades abertos' : '');
+});
+dash.draw('vivo-topo', {
+  mount: (el) => {
+    const pinta = () => {
+      el.replaceChildren();
+      const v = rdVivo();
+      if (!v) { el.append('O quadro ao vivo aparece depois da próxima conferência.'); return; }
+      const idade = Date.now() - new Date(v.at).getTime();
+      const pulso = rdEl('span', 'rd-pulso'); pulso.dataset.velho = idade > 75 * 60000 ? '1' : '0';
+      const prox = rdProximaConferencia(Date.now());
+      const item = (txt, val, cls) => { const s = rdEl('span'); s.append(txt); const b = rdEl('b', cls || '', val); s.append(b); el.append(s); return b; };
+      const s0 = rdEl('span'); s0.append(pulso, 'Conferido há ' + rdDuracao(idade)); el.append(s0);
+      if (prox) item('Próxima: ', prox.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}));
+      item('Saldo com as abertas: ', rdFmt.usd(v.saldo_com_abertas));
+      item('Flutuante: ', rdFmt.usdS(v.flutuante_usd), v.flutuante_usd > 0 ? 'rd-up' : v.flutuante_usd < 0 ? 'rd-down' : '');
+      item('Abertas: ', String(v.abertas)); item('Aguardando gatilho: ', String(v.aguardando));
+    };
+    // repinta a cada 30 s (o "há X min" anda) e na hora em que chegam dados novos (update)
+    return {pinta, timer: setInterval(pinta, 30000)};
+  },
+  update: (el, st) => st.pinta(),
+  unmount: (el, st) => clearInterval(st.timer),
+});
+const rdVivoLadder = (p) => {
+  const lad = rdEl('div', 'rd-vivo-ladder');
+  const W = 300, H = 70, pad = 16, yb = 28;
+  const pts = [p.stop, p.entrada, p.alvo1, p.alvo2, p.preco].filter((v) => typeof v === 'number');
+  const x = d3.scaleLinear().domain(d3.extent(pts)).range(p.direcao === 'SHORT' ? [W - pad, pad] : [pad, W - pad]);
+  const svg = d3.select(lad).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img')
+    .attr('aria-label', 'Preço atual ' + rdNum(p.preco) + ' entre o stop ' + rdNum(p.stop) + ' e o alvo 2 ' + rdNum(p.alvo2));
+  const seg = (a, b, col) => svg.append('rect').attr('x', Math.min(x(a), x(b))).attr('width', Math.abs(x(b) - x(a))).attr('y', yb - 5).attr('height', 10).attr('rx', 3).style('fill', col);
+  seg(p.stop, p.entrada, 'color-mix(in srgb, var(--color-bad) 45%, transparent)');
+  seg(p.entrada, p.alvo2, 'color-mix(in srgb, var(--color-ok) 35%, transparent)');
+  [['Stop', p.stop, 'var(--color-bad)', -1], ['Entrada', p.entrada, 'var(--color-fg)', 1], ['A1', p.alvo1, 'var(--color-ok)', -1], ['A2', p.alvo2, 'var(--color-ok)', 1]].forEach(([lbl, v, col, lado]) => {
+    if (typeof v !== 'number') return;
+    svg.append('line').attr('x1', x(v)).attr('x2', x(v)).attr('y1', yb - 9).attr('y2', yb + 9).style('stroke', col).attr('stroke-width', 2);
+    svg.append('text').attr('x', x(v)).attr('y', lado < 0 ? yb - 13 : yb + 21).attr('text-anchor', x(v) < 30 ? 'start' : x(v) > W - 30 ? 'end' : 'middle').text(lbl);
+  });
+  if (typeof p.stop_efetivo === 'number' && p.stop_efetivo !== p.stop) {
+    svg.append('line').attr('x1', x(p.stop_efetivo)).attr('x2', x(p.stop_efetivo)).attr('y1', yb - 11).attr('y2', yb + 11).style('stroke', 'var(--color-bad)').attr('stroke-width', 2).attr('stroke-dasharray', '3 2');
+  }
+  if (typeof p.preco === 'number') {
+    const px = x(p.preco);
+    svg.append('path').attr('d', d3.symbol(d3.symbolTriangle, 70)()).attr('transform', `translate(${px},${yb + 38}) `).style('fill', 'var(--color-warn)');
+    svg.append('text').attr('class', 'rd-agora').attr('x', px).attr('y', yb + 54).attr('text-anchor', px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle').text('agora ' + rdNum(p.preco));
+  }
+  return lad;
+};
+const RD_VIVO_STATUS = {'aguardando': 'aguardando gatilho', 'aberto': 'aberta', 'alvo1 (aberto)': 'metade realizada no alvo 1'};
+dash.draw('vivo-cards', (el) => {
+  const r = dash.data('ao_vivo_posicoes');
+  el.replaceChildren();
+  if (r.status !== 'ok' || !Array.isArray(r.data)) { rdFail(el, 'ao_vivo_posicoes'); return; }
+  if (!r.data.length) { rdEmpty(el, 'Nenhum trade em andamento agora. Os novos aparecem aqui assim que a equipe publicar um sinal.'); return; }
+  const agora = Date.now();
+  r.data.forEach((p) => {
+    const onde = rdWhereId(p.id);
+    const c = rdEl('article', 'rd-futcard'); c.dataset.dir = p.direcao || '';
+    const top = rdEl('div', 'rd-futtop');
+    const dir = rdSrc(rdEl('span', 'rd-dir', p.direcao + ' · ' + (RD_VIVO_STATUS[p.status] || p.status)), 'ao_vivo_posicoes', 'status', onde);
+    dir.dataset.dir = p.status === 'aguardando' ? 'AGUARDAR' : p.direcao;
+    top.append(rdEl('b', '', (p.ativo || '') + (p.top10 ? ' · ★' + p.top10 : '')), dir);
+    c.append(top);
+    const linha = rdEl('div', 'rd-vivo-preco');
+    linha.append(rdSrc(rdEl('span', 'rd-big', p.preco == null ? '—' : rdNum(p.preco)), 'ao_vivo_posicoes', 'preco', onde));
+    if (typeof p.r_flutuante === 'number') {
+      const rr = rdSrc(rdEl('span', 'rd-vivo-r ' + (p.r_flutuante > 0 ? 'rd-up' : p.r_flutuante < 0 ? 'rd-down' : ''), rdFmt.r(p.r_flutuante)), 'ao_vivo_posicoes', 'r_flutuante', onde);
+      linha.append(rr);
+      if (typeof p.flutuante_usd === 'number') linha.append(rdEl('span', p.flutuante_usd >= 0 ? 'rd-up' : 'rd-down', rdFmt.usdS(p.flutuante_usd)));
+    } else if (typeof p.dist_entrada_pct === 'number') {
+      linha.append(rdEl('span', 'rd-chg', 'falta ' + rdFmt.dec(p.dist_entrada_pct, 2) + '% para a entrada em ' + rdNum(p.entrada)));
+    }
+    c.append(linha);
+    if (p.entrada != null && p.stop != null && p.alvo2 != null) c.append(rdVivoLadder(p));
+    const dl = rdEl('dl', 'rd-lv');
+    const item = (lbl, val, campo) => { const dd = rdEl('dd', '', val); if (campo) rdSrc(dd, 'ao_vivo_posicoes', campo, onde); dl.append(rdEl('dt', '', lbl), dd); };
+    if (p.status === 'aguardando') {
+      item('Entrada (gatilho)', rdNum(p.entrada), 'entrada');
+      item('Stop', rdNum(p.stop), 'stop'); item('Alvo 2', rdNum(p.alvo2), 'alvo2');
+    } else {
+      if (typeof p.dist_stop_pct === 'number') item(p.stop_efetivo !== p.stop ? 'Folga até a entrada (stop)' : 'Folga até o stop', rdFmt.dec(p.dist_stop_pct, 2) + '%', 'dist_stop_pct');
+      if (typeof p.dist_alvo_pct === 'number') item(p.proximo_alvo === p.alvo2 ? 'Falta para o alvo 2' : 'Falta para o alvo 1', rdFmt.dec(p.dist_alvo_pct, 2) + '%', 'dist_alvo_pct');
+      if (typeof p.mfe_r === 'number') { item('Melhor momento', rdFmt.r(p.mfe_r), 'mfe_r'); item('Pior momento', rdFmt.r(p.mae_r), 'mae_r'); }
+      if (typeof p.risco_usd === 'number') { item('Arriscando', rdFmt.usd(p.risco_usd), 'risco_usd'); item('Tamanho da posição', rdFmt.usd(p.tamanho_usd), 'tamanho_usd'); }
+      if (p.acionado_em) item('Aberta há', rdDuracao(agora - new Date(p.acionado_em).getTime()));
+    }
+    if (p.prazo_fim) {
+      const falta = new Date(p.prazo_fim).getTime() - agora;
+      item(p.status === 'aguardando' ? 'Gatilho expira' : 'Prazo de 7 dias', falta > 0 ? 'em ' + rdDuracao(falta) : 'vencido (sai na próxima conferência)');
+    }
+    c.append(dl);
+    el.append(c);
+  });
+});
+dash.draw('vivo-eventos', (el) => {
+  const r = dash.data('ao_vivo_eventos');
+  el.replaceChildren();
+  if (r.status !== 'ok' || !Array.isArray(r.data)) return;
+  if (!r.data.length) { el.append(rdEl('li', 'rd-empty', 'Nenhum aviso ainda.')); return; }
+  r.data.slice(0, 15).forEach((e) => {
+    const li = rdEl('li');
+    const b = rdEl('b', ['alvo1', 'alvo2', 'alvo1 (aberto)'].includes(e.status) ? 'rd-up' : e.status === 'stop' ? 'rd-down' : '', (e.ativo || '') + ' ' + (e.direcao || ''));
+    const box = rdEl('div');
+    let txt = e.texto || e.status || '';
+    if (typeof e.r === 'number') txt += ' · ' + rdFmt.r(e.r) + (typeof e.resultado_usd === 'number' ? ' (' + rdFmt.usdS(e.resultado_usd) + ')' : '');
+    box.append(rdEl('div', '', txt), rdEl('div', 'rd-chg', rdFmt.when(e.t)));
+    li.append(b, box); el.append(li);
+  });
+});
+// Busca os números novos sozinha: o quadro ao vivo a cada minuto e o resto a cada 5 minutos.
+(() => {
+  let n = 0;
+  setInterval(() => {
+    if (document.hidden) return;
+    n += 1;
+    dash.refresh('ao_vivo');
+    if (n % 5 === 0) ['futuros', 'carteira', 'briefings', 'scanner'].forEach((id) => dash.refresh(id));
+  }, 60000);
+})();
 
 // ---------- Gráfico principal ----------
 dash.draw('chart-nome', (el) => { el.textContent = RD_ATIVO_NOME[rdState.ativo][0]; });

@@ -79,8 +79,12 @@ def operacoes_dos_sinais(sinais: List[dict]) -> List[Operacao]:
 
 def simular(ops: List[Operacao], regras: Regras) -> dict:
     """Percorre entradas e saídas em ordem. A entrada fixa o risco pelo saldo do momento; a saída
-    muda o saldo. No mesmo horário, a saída vem antes da entrada."""
-    eventos = [(o.ini, 1, o) for o in ops] + [(o.fim, 0, o) for o in ops if o.fim]
+    muda o saldo. No mesmo horário: primeiro saem as operações que já estavam abertas (o saldo
+    novo vale para quem entra agora), depois entram as novas, e por último saem as que abriram e
+    fecharam no mesmo candle (elas precisam ter entrado para o resultado contar)."""
+    SAIDA, ENTRADA, SAIDA_NO_MESMO_CANDLE = 0, 1, 2
+    eventos = [(o.ini, ENTRADA, o) for o in ops]
+    eventos += [(o.fim, SAIDA_NO_MESMO_CANDLE if o.fim == o.ini else SAIDA, o) for o in ops if o.fim]
     eventos.sort(key=lambda e: (e[0], e[1]))
 
     saldo = pico = regras.inicial
@@ -88,8 +92,8 @@ def simular(ops: List[Operacao], regras: Regras) -> dict:
     inicio = min((o.ini for o in ops), default=None) or agora_iso()
     curva = [{"t": inicio, "saldo": rd2(saldo), "evento": "início"}]
     extrato = []
-    for quando, eh_entrada, o in eventos:
-        if eh_entrada:
+    for quando, fase, o in eventos:
+        if fase == ENTRADA:
             o.risco_usd = saldo * regras.risco_pct / 100
             o.tamanho_usd = o.risco_usd / o.dist
             if o.tamanho_usd > regras.alavancagem * saldo:

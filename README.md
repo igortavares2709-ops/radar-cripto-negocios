@@ -55,6 +55,16 @@ O painel mostra o saldo, o resultado, a taxa de acerto, a maior queda, a curva d
 
 O documento da carteira também guarda o **placar completo** de todos os sinais, inclusive os arquivados. O painel usa esse placar e o extrato para a curva de R, porque só lê os 1.000 registros mais antigos de cada coleção.
 
+## Trades ao vivo
+
+[`scripts/monitor.py`](scripts/monitor.py) acompanha cada trade em andamento. Ele roda **a cada hora** numa tarefa própria, leve, sem notícias nem análise, e também dentro de cada rodada completa. Em cada execução ele:
+
+- confere os sinais (com o `avaliar_sinais.py`) e atualiza a carteira (com o `carteira.py`);
+- pega o último preço de cada moeda na OKX e monta o quadro de cada trade: resultado flutuante em R e em US$, folga até o stop, quanto falta para o alvo, o melhor e o pior momento desde a entrada (MFE/MAE) e quando vence o prazo;
+- grava o quadro em `data/radar/ao_vivo/atual` e, quando um trade é acionado, bate um alvo, bate o stop ou vence, manda um **aviso no celular**.
+
+No painel, a aba **Ao vivo** mostra esses cartões com a régua de preço (stop, entrada, alvos e o preço agora) e os últimos avisos. A página busca os números novos sozinha a cada minuto. O painel não consegue consultar a OKX direto (a página só lê o próprio banco), por isso o preço é o da última conferência, de no máximo 1 hora atrás.
+
 ## Arquivamento (para o painel não travar com o tempo)
 
 O painel lê no máximo 1.000 registros por coleção, começando pelos mais antigos. A cada rodada, os registros velhos vão para coleções de arquivo, que o painel não lê:
@@ -133,6 +143,7 @@ Usa só a biblioteca padrão do Python 3 e dados públicos da OKX (sem chave de 
 | [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py) | Radar: candles e derivativos da OKX, setup, backtest, nota de qualidade e Top 10 |
 | [`scripts/avaliar_sinais.py`](scripts/avaliar_sinais.py) | Conferência dos sinais publicados contra os candles de 1h |
 | [`scripts/carteira.py`](scripts/carteira.py) | Carteira fictícia de US$ 2.000 |
+| [`scripts/monitor.py`](scripts/monitor.py) | Trades ao vivo: conferência + carteira + quadro de cada trade em andamento e os avisos |
 | [`scripts/indicadores.py`](scripts/indicadores.py) | EMA, RSI, ATR e topos/fundos (funções puras, sem rede) |
 | [`scripts/radar_comum.py`](scripts/radar_comum.py) | Cliente da OKX com limite de requisições, datas, leitura dos sinais e a gestão de uma operação (stop, alvos e prazo), usada igual pela conferência e pelo backtest |
 | [`tests/test_regras.py`](tests/test_regras.py) | Testes das regras, sem rede |
@@ -154,7 +165,8 @@ python3 -m unittest discover -s tests -v
 - `data/radar/futuros`: sinais de futuros, com `status`, `resultado_r`, `acionado_em` e `encerrado_em` preenchidos pela conferência
 - `data/radar/renda`: oportunidades de renda digital
 - `data/radar/scanner/atual`: a tabela do radar, com a nota de qualidade e o Top 10
-- `data/radar/carteira/atual`: a carteira fictícia (saldo, curva, extrato e operações abertas)
+- `data/radar/carteira/atual`: a carteira fictícia (saldo, curva, extrato, operações abertas e placar completo)
+- `data/radar/ao_vivo/atual`: o quadro ao vivo dos trades em andamento e os últimos avisos
 - `data/radar/ideias`: o antigo banco de ideias de negócio (só histórico)
 
 ## Limitações honestas

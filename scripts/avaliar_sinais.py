@@ -116,7 +116,7 @@ def avaliar(s: dict, candles: dict, agora: int) -> dict:
             "r_flutuante": rd2(saida.r), **base, "preco_atual": k["c"][-1]}
 
 
-def avaliar_todos(sinais: List[dict], agora: int) -> Dict[str, dict]:
+def avaliar_todos(sinais: List[dict], agora: int, cache: Optional[dict] = None) -> Dict[str, dict]:
     """Avalia os sinais LONG/SHORT ainda não encerrados. Baixa os candles de cada moeda uma vez só,
     desde o sinal pendente mais antigo dela. Um sinal com dados ruins não atrapalha os outros."""
     pendentes = [s for s in sinais if s.get("direcao") in ("LONG", "SHORT") and s.get("entrada") is not None
@@ -128,7 +128,8 @@ def avaliar_todos(sinais: List[dict], agora: int) -> Dict[str, dict]:
         except Exception:
             continue
         desde[ccy] = min(desde.get(ccy, t0), t0)
-    cache, out = {}, {}
+    cache = {} if cache is None else cache  # moeda -> candles (quem chama pode reaproveitar)
+    out = {}
     for s in pendentes:
         try:
             ccy = str(s["ativo"]).upper()
