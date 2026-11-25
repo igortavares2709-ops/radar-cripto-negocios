@@ -110,6 +110,25 @@ python3 scripts/carteira.py sinais_conferidos.json --inicial 2000 --risco 1 --ta
 
 Usa só a biblioteca padrão do Python 3 e dados públicos da OKX (sem chave de API). A saída é JSON com os indicadores por tempo gráfico, os derivativos e o setup sugerido.
 
+## Organização do código
+
+| Arquivo | O que faz |
+|---|---|
+| [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py) | Radar: candles e derivativos da OKX, setup, backtest, nota de qualidade e Top 10 |
+| [`scripts/avaliar_sinais.py`](scripts/avaliar_sinais.py) | Conferência dos sinais publicados contra os candles de 1h |
+| [`scripts/carteira.py`](scripts/carteira.py) | Carteira fictícia de US$ 2.000 |
+| [`scripts/indicadores.py`](scripts/indicadores.py) | EMA, RSI, ATR e topos/fundos (funções puras, sem rede) |
+| [`scripts/radar_comum.py`](scripts/radar_comum.py) | Cliente da OKX com limite de requisições, datas, leitura dos sinais e a gestão de uma operação (stop, alvos e prazo), usada igual pela conferência e pelo backtest |
+| [`tests/test_regras.py`](tests/test_regras.py) | Testes das regras, sem rede |
+
+Os parâmetros (pontuação mínima, múltiplos de ATR, limites de RSI, pesos da nota, prazos) ficam como constantes nomeadas no topo de cada script.
+
+Para rodar os testes:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 ## Painel
 
 [`painel/index.html`](painel/index.html) é a página do painel. Ela roda dentro de um Artifact do claude.ai e lê os dados destas coleções:

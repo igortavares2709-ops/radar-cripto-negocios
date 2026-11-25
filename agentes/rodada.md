@@ -2,7 +2,7 @@
 
 Este é o roteiro que a tarefa agendada (a cada 4 horas) entrega a uma sessão nova do Claude.
 
-A cada rodada, a sessão baixa a versão mais nova de `scripts/analise_tecnica.py`, `scripts/avaliar_sinais.py` e `scripts/carteira.py` do branch `main` deste repositório, primeiro com `git clone --depth 1` e, se falhar, pelo raw.githubusercontent.com. Ela anota o commit usado nas fontes do relatório. Para mudar a análise técnica, basta fazer commit no `main`: a próxima rodada já usa a versão nova. Se o script não baixar ou não rodar, a rodada publica os futuros como "AGUARDAR" em vez de improvisar outro cálculo.
+A cada rodada, a sessão baixa a versão mais nova da pasta `scripts/` (`analise_tecnica.py`, `avaliar_sinais.py`, `carteira.py` e os módulos `indicadores.py` e `radar_comum.py` que eles importam) do branch `main` deste repositório, primeiro com `git clone --depth 1` e, se falhar, pelo raw.githubusercontent.com. Ela anota o commit usado nas fontes do relatório. Para mudar a análise técnica, basta fazer commit no `main`: a próxima rodada já usa a versão nova. Se o script não baixar ou não rodar, a rodada publica os futuros como "AGUARDAR" em vez de improvisar outro cálculo.
 
 1. **Memória:** ler as últimas 6 rodadas (`data/radar/briefings`), todos os sinais de futuros (`data/radar/futuros`) e as oportunidades de renda já publicadas (`data/radar/renda`).
 2. **Dados de mercado:** CoinGecko `coins/markets`, `global` e `search/trending`; alternative.me `fng`; DeFiLlama `v2/chains`.

@@ -9,418 +9,477 @@ Uso:
       sem stablecoins) com volume de 24h acima de --min-vol dólares. Grava o JSON completo em --saida,
       a tabela compacta do radar em --scanner e imprime um resumo com as 10 melhores oportunidades.
 
-Top 10: cada moeda com plano (imediato ou condicional) e mais de US$ 5 milhões por dia ganha uma
-nota de qualidade de 0 a 100. A nota junta o backtest do mesmo plano na própria moeda (candles 4H
-dos últimos ~50 dias: quantas vezes deu lucro e quanto rendeu em R), a confluência dos tempos
+Para cada moeda: tendência, médias, RSI, MACD, ATR, suportes e resistências em 1D, 4H e 1H, mais
+funding, open interest e contas long/short; um setup (LONG/SHORT imediato ou plano condicional);
+um backtest do mesmo plano nos candles 4H da própria moeda; e uma nota de qualidade de 0 a 100.
+
+Top 10: as 10 maiores notas entre as moedas com plano, mais de US$ 5 milhões por dia e backtest
+que não deu prejuízo. A nota junta o backtest (rendimento médio e acerto), a confluência dos tempos
 gráficos, o RSI (entrada esticada perde pontos), a liquidez e o posicionamento (funding e contas
-long/short contra a multidão). As 10 maiores notas, sem backtest negativo, são o "top 10".
+long/short contra a multidão).
+
 Só biblioteca padrão. Nada aqui é recomendação de investimento.
 """
-import argparse, json, math, sys, threading, time, urllib.request
+import argparse
+import json
+import math
+import sys
 from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional
 
-API = "https://www.okx.com/api/v5"
-TFS = {"1D": 300, "4H": 300, "1H": 300}
+from indicadores import atr, atr_serie, ema, rsi, swings
+from radar_comum import Plano, agora_iso, gerir, json_compacto, okx, rd_sig
+
+# ---------------------------------------------------------------- parâmetros
+
+TEMPOS_GRAFICOS = {"1D": 300, "4H": 300, "1H": 300}  # tempo gráfico -> quantos candles baixar
+MIN_CANDLES = 60
 ESTAVEIS = {"USDC", "USDT", "DAI", "FDUSD", "TUSD", "USDE", "PYUSD", "USDD", "BUSD", "USD1", "RLUSD", "USDG"}
 
-# limites da OKX por IP (com folga): candles 40/2s, funding 20/2s, rubik 5/2s
-_LIMITES = {"/market/": 12.0, "/public/": 6.0, "/rubik/": 2.0}
-_proxima = {k: 0.0 for k in _LIMITES}
-_trava = threading.Lock()
+# setup
+PONTUACAO_SINAL = 5        # |pontuação| para LONG/SHORT imediato
+PONTUACAO_PLANO = 3        # |pontuação| para plano condicional (e para "viés" no resumo)
+RSI_4H_ESTICADO = (28, 72)          # (sobrevendido, sobrecomprado) no 4H: esperar repique/recuo
+RSI_1D_EXTREMO = (25, 75)           # sobrevenda/sobrecompra extrema no diário
+FUNDING_ALTO, FUNDING_NEGATIVO = 0.03, -0.01   # % a cada 8h
+STOP_ATR = 1.5                      # stop do imediato: 1,5 ATR do 4H
+ALVOS_R = (1.5, 3.0)                # alvos do imediato em múltiplos do risco
+STOP_NO_NIVEL = (1.0, 2.5, 0.3)     # usa o suporte/resistência se estiver entre 1 e 2,5 ATR (+0,3 ATR de folga)
+PERDA_MAX_MARGEM_PCT, ALAVANCAGEM_MAX = 2, 5
+# plano condicional: entrada na EMA20 do 4H (ou meio ATR além do preço), stop e alvos em ATR
+ZONA_ATR, STOP_COND_ATR, ALVOS_COND_ATR = 0.5, 1.5, (2.25, 4.5)
+
+# backtest (mesmas regras do avaliar_sinais.py, em candles 4H)
+BT_INICIO = 60                      # primeiro candle testado (as médias precisam de histórico)
+BT_GATILHO_CANDLES = 12             # 48h para o condicional acionar
+BT_PRAZO_CANDLES = 42               # 7 dias de operação
+
+# Top 10
+TOP_N = 10
+VOLUME_MIN_TOP_MI = 5               # US$ milhões em 24h
+BT_MIN_OPERACOES = 3                # com menos que isso, o backtest não exclui a moeda
+
+# ---------------------------------------------------------------- candles e indicadores por tempo gráfico
 
 
-def _esperar(path):
-    grupo = next((g for g in _LIMITES if path.startswith(g)), None)
-    if not grupo:
-        return
-    with _trava:
-        agora = time.monotonic()
-        quando = max(agora, _proxima[grupo])
-        _proxima[grupo] = quando + 1.0 / _LIMITES[grupo]
-    if quando > agora:
-        time.sleep(quando - agora)
-
-
-def get(path):
-    for i in range(3):
-        _esperar(path)
-        try:
-            req = urllib.request.Request(API + path, headers={"User-Agent": "Mozilla/5.0 radar-analise/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                d = json.load(r)
-            if d.get("code") == "0":
-                return d["data"]
-        except Exception:
-            pass
-        time.sleep(1.5 * (i + 1))
-    return None
-
-
-def rd(x):
-    """Arredonda por algarismos significativos (serve para BTC e para DOGE)."""
-    return None if x is None else float(f"{x:.6g}")
-
-
-def ema(v, n):
-    k, out = 2 / (n + 1), [v[0]]
-    for x in v[1:]:
-        out.append(x * k + out[-1] * (1 - k))
-    return out
-
-
-def rsi(c, n=14):
-    g = l = 0.0
-    for i in range(1, n + 1):
-        d = c[i] - c[i - 1]; g += max(d, 0); l += max(-d, 0)
-    g, l = g / n, l / n
-    for i in range(n + 1, len(c)):
-        d = c[i] - c[i - 1]
-        g = (g * (n - 1) + max(d, 0)) / n; l = (l * (n - 1) + max(-d, 0)) / n
-    return 100 if l == 0 else 100 - 100 / (1 + g / l)
-
-
-def atr(h, l, c, n=14):
-    tr = [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(1, len(c))]
-    a = sum(tr[:n]) / n
-    for x in tr[n:]:
-        a = (a * (n - 1) + x) / n
-    return a
-
-
-def swings(h, l, w=5, look=120):
-    hs, ls = [], []
-    s = max(w, len(h) - look)
-    for i in range(s, len(h) - w):
-        if h[i] == max(h[i - w:i + w + 1]): hs.append(h[i])
-        if l[i] == min(l[i - w:i + w + 1]): ls.append(l[i])
-    return hs, ls
-
-
-def tf_analysis(inst, bar, limit):
-    rows = get(f"/market/candles?instId={inst}&bar={bar}&limit={min(limit, 300)}")
-    if not rows:
+def baixar_candles(inst: str, bar: str, limite: int) -> Optional[Dict[str, List[float]]]:
+    """Candles fechados, do mais antigo para o mais novo, como listas o/h/l/c/v."""
+    linhas = okx.get(f"/market/candles?instId={inst}&bar={bar}&limit={min(limite, 300)}")
+    if not linhas:
         return None
-    seen, data = set(), []
-    for r in rows:
-        if r[0] not in seen and r[8] == "1":  # só candles fechados
-            seen.add(r[0]); data.append(r)
-    data.sort(key=lambda r: int(r[0]))
-    o, h, l, c, v = ([float(r[i]) for r in data] for i in (1, 2, 3, 4, 5))
-    if len(c) < 60:
+    vistos, fechados = set(), []
+    for r in linhas:
+        if r[0] not in vistos and r[8] == "1":  # r[8] == "1": candle fechado
+            vistos.add(r[0])
+            fechados.append(r)
+    fechados.sort(key=lambda r: int(r[0]))
+    o, h, l, c, v = ([float(r[i]) for r in fechados] for i in (1, 2, 3, 4, 5))
+    return {"o": o, "h": h, "l": l, "c": c, "v": v}
+
+
+def analisar_tempo_grafico(k: Dict[str, List[float]]) -> Optional[dict]:
+    """Resumo técnico de uma série de candles (None se houver menos de MIN_CANDLES)."""
+    h, l, c, v = k["h"], k["l"], k["c"], k["v"]
+    if len(c) < MIN_CANDLES:
         return None
     e20, e50 = ema(c, 20), ema(c, 50)
     e200 = ema(c, 200) if len(c) >= 200 else None
-    m12, m26 = ema(c, 12), ema(c, 26)
-    macd = [a - b for a, b in zip(m12, m26)]
-    sig = ema(macd, 9)
-    last = c[-1]
-    mean20 = sum(c[-20:]) / 20
-    sd = (sum((x - mean20) ** 2 for x in c[-20:]) / 20) ** 0.5
-    hs, ls = swings(h, l)
-    res = sorted({rd(x) for x in hs if x > last})[:3]
-    sup = sorted({rd(x) for x in ls if x < last}, reverse=True)[:3]
-    trend = 0
-    trend += 1 if last > e20[-1] else -1
-    trend += 1 if e20[-1] > e50[-1] else -1
-    if e200: trend += 1 if last > e200[-1] else -1
-    vol_ratio = (sum(v[-5:]) / 5) / (sum(v[-50:]) / 50)
+    macd = [a - b for a, b in zip(ema(c, 12), ema(c, 26))]
+    sinal_macd = ema(macd, 9)
+    ultimo = c[-1]
+    media20 = sum(c[-20:]) / 20
+    desvio20 = (sum((x - media20) ** 2 for x in c[-20:]) / 20) ** 0.5
+    topos, fundos = swings(h, l)
+    tendencia = (1 if ultimo > e20[-1] else -1) + (1 if e20[-1] > e50[-1] else -1)
+    if e200:
+        tendencia += 1 if ultimo > e200[-1] else -1
     return {
-        "fechamento": last, "ema20": rd(e20[-1]), "ema50": rd(e50[-1]),
-        "ema200": rd(e200[-1]) if e200 else None,
-        "rsi14": round(rsi(c), 1), "macd_hist": rd(macd[-1] - sig[-1]),
-        "macd_hist_ant": rd(macd[-2] - sig[-2]),
-        "atr14": rd(atr(h, l, c)),
-        "bollinger": [rd(mean20 - 2 * sd), rd(mean20 + 2 * sd)],
-        "resistencias": res, "suportes": sup,
+        "fechamento": ultimo, "ema20": rd_sig(e20[-1]), "ema50": rd_sig(e50[-1]),
+        "ema200": rd_sig(e200[-1]) if e200 else None,
+        "rsi14": round(rsi(c), 1),
+        "macd_hist": rd_sig(macd[-1] - sinal_macd[-1]), "macd_hist_ant": rd_sig(macd[-2] - sinal_macd[-2]),
+        "atr14": rd_sig(atr(h, l, c)),
+        "bollinger": [rd_sig(media20 - 2 * desvio20), rd_sig(media20 + 2 * desvio20)],
+        "resistencias": sorted({rd_sig(x) for x in topos if x > ultimo})[:3],
+        "suportes": sorted({rd_sig(x) for x in fundos if x < ultimo}, reverse=True)[:3],
         "max_20": max(h[-20:]), "min_20": min(l[-20:]),
-        "volume_vs_media50": rd(vol_ratio),
-        "variacao_10_candles_pct": rd((last / c[-11] - 1) * 100),
-        "tendencia": trend,  # -3 (baixa forte) a +3 (alta forte)
-        "_serie": {"h": h, "l": l, "c": c} if bar == "4H" else None,  # só para o backtest; não vai para a saída
+        "volume_vs_media50": rd_sig((sum(v[-5:]) / 5) / (sum(v[-50:]) / 50)),
+        "variacao_10_candles_pct": rd_sig((ultimo / c[-11] - 1) * 100),
+        "tendencia": tendencia,  # -3 (baixa forte) a +3 (alta forte)
     }
 
 
-def derivativos(ccy, inst):
+def derivativos(ccy: str, inst: str) -> dict:
+    """Funding atual, open interest (e variação em 7 dias) e relação de contas long/short."""
     out = {}
-    f = get(f"/public/funding-rate?instId={inst}")
-    if f: out["funding_8h_pct"] = round(float(f[0]["fundingRate"]) * 100, 4)
-    oi = get(f"/rubik/stat/contracts/open-interest-volume?ccy={ccy}&period=1D")
+    f = okx.get(f"/public/funding-rate?instId={inst}")
+    if f:
+        out["funding_8h_pct"] = round(float(f[0]["fundingRate"]) * 100, 4)
+    oi = okx.get(f"/rubik/stat/contracts/open-interest-volume?ccy={ccy}&period=1D")
     if oi and len(oi) > 7:
-        out["oi_usd"] = float(oi[0][1]); out["oi_var_7d_pct"] = round((float(oi[0][1]) / float(oi[7][1]) - 1) * 100, 2)
-    ls = get(f"/rubik/stat/contracts/long-short-account-ratio?ccy={ccy}&period=1H")
-    if ls: out["long_short_contas"] = float(ls[0][1])
+        out["oi_usd"] = float(oi[0][1])
+        out["oi_var_7d_pct"] = round((float(oi[0][1]) / float(oi[7][1]) - 1) * 100, 2)
+    ls = okx.get(f"/rubik/stat/contracts/long-short-account-ratio?ccy={ccy}&period=1H")
+    if ls:
+        out["long_short_contas"] = float(ls[0][1])
     return out
 
+# ---------------------------------------------------------------- setup
 
-def setup(a, d):
-    t1d, t4h, t1h = (a.get(k) for k in ("1D", "4H", "1H"))
-    if not (t1d and t4h and t1h):
-        return {"direcao": "SEM SINAL", "motivo": "dados insuficientes"}
-    score, why = 0, []
-    score += t1d["tendencia"]; why.append(f"tendência 1D {t1d['tendencia']:+d}")
-    score += t4h["tendencia"]; why.append(f"tendência 4H {t4h['tendencia']:+d}")
-    if t4h["macd_hist"] > 0 and t4h["macd_hist"] > t4h["macd_hist_ant"]: score += 1; why.append("MACD 4H virando para cima")
-    if t4h["macd_hist"] < 0 and t4h["macd_hist"] < t4h["macd_hist_ant"]: score -= 1; why.append("MACD 4H ganhando força para baixo")
-    if t1h["tendencia"] > 0: score += 1
-    if t1h["tendencia"] < 0: score -= 1
+
+def pontuar(t1d: dict, t4h: dict, t1h: dict, d: dict):
+    """Pontuação de -9 a +9 (tendência 1D e 4H, MACD 4H, tendência 1H, funding) e os motivos."""
+    score, motivos = 0, []
+    score += t1d["tendencia"]
+    motivos.append(f"tendência 1D {t1d['tendencia']:+d}")
+    score += t4h["tendencia"]
+    motivos.append(f"tendência 4H {t4h['tendencia']:+d}")
+    if t4h["macd_hist"] > 0 and t4h["macd_hist"] > t4h["macd_hist_ant"]:
+        score += 1
+        motivos.append("MACD 4H virando para cima")
+    if t4h["macd_hist"] < 0 and t4h["macd_hist"] < t4h["macd_hist_ant"]:
+        score -= 1
+        motivos.append("MACD 4H ganhando força para baixo")
+    if t1h["tendencia"] > 0:
+        score += 1
+    if t1h["tendencia"] < 0:
+        score -= 1
     fr = d.get("funding_8h_pct")
     if fr is not None:
-        if fr > 0.03: score -= 1; why.append("funding alto: comprados lotados")
-        if fr < -0.01: score += 1; why.append("funding negativo: vendidos lotados (risco de short squeeze)")
-    r4 = t4h["rsi14"]
-    direcao = "LONG" if score >= 5 else "SHORT" if score <= -5 else "SEM SINAL"
-    if direcao == "LONG" and r4 > 72: direcao, _ = "SEM SINAL", why.append("RSI 4H sobrecomprado: esperar recuo")
-    if direcao == "SHORT" and r4 < 28: direcao, _ = "SEM SINAL", why.append("RSI 4H sobrevendido: esperar repique")
-    if direcao == "SHORT" and t1d["rsi14"] < 25: direcao, _ = "SEM SINAL", why.append(f"RSI diário {t1d['rsi14']} (sobrevenda extrema): vender aqui é correr atrás do preço")
-    if direcao == "LONG" and t1d["rsi14"] > 75: direcao, _ = "SEM SINAL", why.append(f"RSI diário {t1d['rsi14']} (sobrecompra extrema)")
-    px, at = t4h["fechamento"], t4h["atr14"]
-    out = {"direcao": direcao, "pontuacao": score, "motivos": why, "preco": px}
-    if direcao == "SEM SINAL":
-        # plano condicional: operar a favor da tendência só depois de um repique/recuo até a EMA20 do 4H
-        if score <= -3:
-            z = max(t4h["ema20"], px + 0.5 * t4h["atr14"])
-            out["plano_condicional"] = {"direcao": "SHORT", "gatilho": f"repique até a zona de {rd(z)} com rejeição (candle 4H fechando abaixo)",
-                                        "entrada": rd(z), "stop": rd(z + 1.5 * t4h["atr14"]), "alvo1": rd(z - 2.25 * t4h["atr14"]), "alvo2": rd(z - 4.5 * t4h["atr14"])}
-        elif score >= 3:
-            z = min(t4h["ema20"], px - 0.5 * t4h["atr14"])
-            out["plano_condicional"] = {"direcao": "LONG", "gatilho": f"recuo até a zona de {rd(z)} com defesa (candle 4H fechando acima)",
-                                        "entrada": rd(z), "stop": rd(z - 1.5 * t4h["atr14"]), "alvo1": rd(z + 2.25 * t4h["atr14"]), "alvo2": rd(z + 4.5 * t4h["atr14"])}
-        return out
+        if fr > FUNDING_ALTO:
+            score -= 1
+            motivos.append("funding alto: comprados lotados")
+        if fr < FUNDING_NEGATIVO:
+            score += 1
+            motivos.append("funding negativo: vendidos lotados (risco de short squeeze)")
+    return score, motivos
+
+
+def motivo_esticado(direcao: str, t1d: dict, t4h: dict) -> Optional[str]:
+    """Por que NÃO entrar agora (preço esticado demais na direção do sinal), ou None.
+    Vale o primeiro motivo encontrado: RSI do 4H antes do RSI diário."""
+    r4, r1d = t4h["rsi14"], t1d["rsi14"]
+    if direcao == "LONG" and r4 > RSI_4H_ESTICADO[1]:
+        return "RSI 4H sobrecomprado: esperar recuo"
+    if direcao == "SHORT" and r4 < RSI_4H_ESTICADO[0]:
+        return "RSI 4H sobrevendido: esperar repique"
+    if direcao == "SHORT" and r1d < RSI_1D_EXTREMO[0]:
+        return f"RSI diário {r1d} (sobrevenda extrema): vender aqui é correr atrás do preço"
+    if direcao == "LONG" and r1d > RSI_1D_EXTREMO[1]:
+        return f"RSI diário {r1d} (sobrecompra extrema)"
+    return None
+
+
+def plano_condicional(score: int, preco: float, t4h: dict) -> Optional[dict]:
+    """Operar a favor da tendência só depois de um repique/recuo até a EMA20 do 4H."""
+    a = t4h["atr14"]
+    if score <= -PONTUACAO_PLANO:
+        z = max(t4h["ema20"], preco + ZONA_ATR * a)
+        return {"direcao": "SHORT", "gatilho": f"repique até a zona de {rd_sig(z)} com rejeição (candle 4H fechando abaixo)",
+                "entrada": rd_sig(z), "stop": rd_sig(z + STOP_COND_ATR * a),
+                "alvo1": rd_sig(z - ALVOS_COND_ATR[0] * a), "alvo2": rd_sig(z - ALVOS_COND_ATR[1] * a)}
+    if score >= PONTUACAO_PLANO:
+        z = min(t4h["ema20"], preco - ZONA_ATR * a)
+        return {"direcao": "LONG", "gatilho": f"recuo até a zona de {rd_sig(z)} com defesa (candle 4H fechando acima)",
+                "entrada": rd_sig(z), "stop": rd_sig(z - STOP_COND_ATR * a),
+                "alvo1": rd_sig(z + ALVOS_COND_ATR[0] * a), "alvo2": rd_sig(z + ALVOS_COND_ATR[1] * a)}
+    return None
+
+
+def niveis_imediatos(direcao: str, preco: float, t4h: dict) -> dict:
+    """Entrada no preço, stop em 1,5 ATR (ou além do suporte/resistência próximo) e alvos em 1,5R e 3R."""
     sgn = 1 if direcao == "LONG" else -1
-    stop = px - sgn * 1.5 * at
-    lvl = t4h["suportes"] if sgn > 0 else t4h["resistencias"]
-    if lvl:  # stop além do suporte/resistência mais próximo, se estiver perto
-        alt = lvl[0] - sgn * 0.3 * at
-        if 1.0 * at <= abs(px - alt) < 2.5 * at and (alt - px) * sgn < 0: stop = alt
-    risk = abs(px - stop)
-    out.update({"entrada": rd(px), "stop": rd(stop),
-                "alvo1": rd(px + sgn * 1.5 * risk), "alvo2": rd(px + sgn * 3 * risk),
-                "risco_pct": rd(risk / px * 100),
-                # alavancagem para perder no máximo ~2% da margem se o stop for atingido, limitada a 5x
-                "alavancagem_max": max(1, min(5, int(2 / max(risk / px * 100, 0.01))))})
+    a = t4h["atr14"]
+    stop = preco - sgn * STOP_ATR * a
+    niveis = t4h["suportes"] if sgn > 0 else t4h["resistencias"]
+    if niveis:
+        perto_min, perto_max, folga = STOP_NO_NIVEL
+        alternativo = niveis[0] - sgn * folga * a
+        if perto_min * a <= abs(preco - alternativo) < perto_max * a and (alternativo - preco) * sgn < 0:
+            stop = alternativo
+    risco = abs(preco - stop)
+    risco_pct = risco / preco * 100
+    return {"entrada": rd_sig(preco), "stop": rd_sig(stop),
+            "alvo1": rd_sig(preco + sgn * ALVOS_R[0] * risco), "alvo2": rd_sig(preco + sgn * ALVOS_R[1] * risco),
+            "risco_pct": rd_sig(risco_pct),
+            # alavancagem para perder no máximo ~2% da margem se o stop for atingido, limitada a 5x
+            "alavancagem_max": max(1, min(ALAVANCAGEM_MAX, int(PERDA_MAX_MARGEM_PCT / max(risco_pct, 0.01))))}
+
+
+def setup(tfs: dict, d: dict) -> dict:
+    """Direção sugerida (LONG, SHORT ou SEM SINAL), com níveis do imediato ou um plano condicional."""
+    t1d, t4h, t1h = (tfs.get(k) for k in ("1D", "4H", "1H"))
+    if not (t1d and t4h and t1h):
+        return {"direcao": "SEM SINAL", "motivo": "dados insuficientes"}
+    score, motivos = pontuar(t1d, t4h, t1h, d)
+    direcao = "LONG" if score >= PONTUACAO_SINAL else "SHORT" if score <= -PONTUACAO_SINAL else "SEM SINAL"
+    esticado = motivo_esticado(direcao, t1d, t4h)
+    if esticado:
+        direcao = "SEM SINAL"
+        motivos.append(esticado)
+    preco = t4h["fechamento"]
+    out = {"direcao": direcao, "pontuacao": score, "motivos": motivos, "preco": preco}
+    if direcao == "SEM SINAL":
+        pc = plano_condicional(score, preco, t4h)
+        if pc:
+            out["plano_condicional"] = pc
+        return out
+    out.update(niveis_imediatos(direcao, preco, t4h))
     return out
 
-
-def _gerir(h, l, c, i0, sgn, e, st, a1, a2, max_barras=42):
-    """Mesma gestão do avaliar_sinais.py: stop primeiro; no alvo 1 sai metade e o stop vai para a entrada.
-    Devolve (resultado em R, índice do candle de saída)."""
-    risco = abs(e - st)
-    r1, r2 = abs(a1 - e) / risco, abs(a2 - e) / risco
-    stop, meia = st, False
-    fim = min(len(c), i0 + max_barras)
-    for j in range(i0, fim):
-        bs = (sgn > 0 and l[j] <= stop) or (sgn < 0 and h[j] >= stop)
-        b1 = (sgn > 0 and h[j] >= a1) or (sgn < 0 and l[j] <= a1)
-        b2 = (sgn > 0 and h[j] >= a2) or (sgn < 0 and l[j] <= a2)
-        if not meia:
-            if bs: return -1.0, j
-            if b1:
-                meia, stop = True, e
-                if b2: return (r1 + r2) / 2, j
-        else:
-            if bs: return r1 / 2, j
-            if b2: return (r1 + r2) / 2, j
-    if fim >= len(c):
-        return None, len(c)  # ainda aberto no fim da série: não conta
-    aberto = sgn * (c[fim - 1] - e) / risco
-    return ((r1 + aberto) / 2 if meia else aberto), fim - 1
+# ---------------------------------------------------------------- backtest
 
 
-def backtest(serie, direcao, tipo):
-    """Testa o mesmo tipo de plano nos candles 4H da própria moeda (sem olhar o futuro).
-    Uma operação por vez. Gatilho de condicional: até 12 candles (48h). Prazo: 42 candles (7 dias)."""
-    h, l, c = serie["h"], serie["l"], serie["c"]
+def backtest(k: Dict[str, List[float]], direcao: str, tipo: str) -> dict:
+    """Testa o mesmo tipo de plano nos candles 4H da própria moeda, sem olhar o futuro.
+
+    Em cada candle com tendência a favor (preço e EMA20 do lado da direção, EMA20 sobre a EMA50),
+    abre o plano: imediato no fechamento, ou condicional na zona da EMA20 se o preço chegar lá em
+    até 48h. Uma operação por vez, com a gestão do radar_comum.gerir e prazo de 7 dias.
+    Devolve {"n", "acerto" (% com lucro), "exp_r" (média em R)}.
+    """
+    h, l, c = k["h"], k["l"], k["c"]
     sgn = 1 if direcao == "LONG" else -1
     e20, e50 = ema(c, 20), ema(c, 50)
-    # ATR de 14 candles em cada ponto
-    tr = [h[0] - l[0]] + [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(1, len(c))]
-    at = [0.0] * len(c)
-    at[14] = sum(tr[1:15]) / 14
-    for i in range(15, len(c)):
-        at[i] = (at[i - 1] * 13 + tr[i]) / 14
-    rs, i = [], 60
+    atrs = atr_serie(h, l, c)
+    resultados, i = [], BT_INICIO
     while i < len(c) - 1:
-        a = at[i]
+        a = atrs[i]
         regime = (1 if c[i] > e20[i] else -1) + (1 if e20[i] > e50[i] else -1)
-        if a <= 0 or regime * sgn < 2:
-            i += 1; continue
+        if not a or regime * sgn < 2:
+            i += 1
+            continue
         if tipo == "imediato":
-            e = c[i]; st = e - sgn * 1.5 * a; risco = 1.5 * a
-            a1, a2, i0 = e + sgn * 1.5 * risco, e + sgn * 3 * risco, i + 1
+            entrada = c[i]
+            risco = STOP_ATR * a
+            plano = Plano(sgn, entrada, entrada - sgn * risco,
+                          entrada + sgn * ALVOS_R[0] * risco, entrada + sgn * ALVOS_R[1] * risco)
+            inicio = i + 1
         else:
-            e = min(e20[i], c[i] - 0.5 * a) if sgn > 0 else max(e20[i], c[i] + 0.5 * a)
-            st, a1, a2 = e - sgn * 1.5 * a, e + sgn * 2.25 * a, e + sgn * 4.5 * a
-            i0 = None
-            for j in range(i + 1, min(len(c), i + 13)):
-                if (sgn > 0 and l[j] <= e) or (sgn < 0 and h[j] >= e):
-                    i0 = j; break
-            if i0 is None:
-                i += 1; continue
-        r, fim = _gerir(h, l, c, i0, sgn, e, st, a1, a2)
-        if r is None:
-            break
-        rs.append(r)
-        i = fim + 1
-    if not rs:
+            entrada = min(e20[i], c[i] - ZONA_ATR * a) if sgn > 0 else max(e20[i], c[i] + ZONA_ATR * a)
+            plano = Plano(sgn, entrada, entrada - sgn * STOP_COND_ATR * a,
+                          entrada + sgn * ALVOS_COND_ATR[0] * a, entrada + sgn * ALVOS_COND_ATR[1] * a)
+            inicio = next((j for j in range(i + 1, min(len(c), i + 1 + BT_GATILHO_CANDLES))
+                           if (sgn > 0 and l[j] <= entrada) or (sgn < 0 and h[j] >= entrada)), None)
+            if inicio is None:
+                i += 1
+                continue
+        # o prazo só fecha a operação se ainda houver candle depois; sem ele, ela segue aberta
+        saida = gerir(plano, h, l, c, inicio,
+                      vencido=lambda j, ini=inicio: j - ini + 1 >= BT_PRAZO_CANDLES and j + 1 < len(c))
+        if saida.situacao == "aberto":
+            break  # ainda aberta no fim da série: não conta
+        resultados.append(saida.r)
+        i = saida.indice + 1
+    if not resultados:
         return {"n": 0, "acerto": None, "exp_r": None}
-    return {"n": len(rs), "acerto": round(100 * sum(1 for r in rs if r > 0) / len(rs)), "exp_r": round(sum(rs) / len(rs), 2)}
+    return {"n": len(resultados),
+            "acerto": round(100 * sum(1 for r in resultados if r > 0) / len(resultados)),
+            "exp_r": round(sum(resultados) / len(resultados), 2)}
+
+# ---------------------------------------------------------------- análise de uma moeda
 
 
-def analisar(ccy):
+def analisar(ccy: str) -> dict:
     inst = f"{ccy}-USDT-SWAP"
-    tfs = {tf: tf_analysis(inst, tf, n) for tf, n in TFS.items()}
+    candles = {tf: baixar_candles(inst, tf, n) for tf, n in TEMPOS_GRAFICOS.items()}
+    tfs = {tf: analisar_tempo_grafico(k) if k else None for tf, k in candles.items()}
     d = derivativos(ccy, inst)
     st = setup(tfs, d)
-    plano = st if st.get("entrada") is not None else st.get("plano_condicional")
-    serie = tfs.get("4H") and tfs["4H"].get("_serie")
-    if plano and serie:
-        st["backtest"] = backtest(serie, plano["direcao"], "imediato" if st.get("entrada") is not None else "condicional")
-    for t in tfs.values():
-        if t: t.pop("_serie", None)
+    imediato = st.get("entrada") is not None
+    plano = st if imediato else st.get("plano_condicional")
+    if plano and tfs.get("4H"):
+        st["backtest"] = backtest(candles["4H"], plano["direcao"], "imediato" if imediato else "condicional")
     return {"timeframes": tfs, "derivativos": d, "setup": st}
 
+# ---------------------------------------------------------------- nota de qualidade
 
-def qualidade(linha, bt):
-    """Nota de 0 a 100 da chance de a operação dar lucro (ver o topo do arquivo)."""
-    p = linha["plano"]
-    sgn = 1 if p["direcao"] == "LONG" else -1
-    n, exp, ac = bt.get("n") or 0, bt.get("exp_r"), bt.get("acerto")
+
+def _limitar(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def qualidade(linha: dict, bt: dict) -> int:
+    """Nota de 0 a 100 da chance de a operação dar lucro. Pesos: backtest 50 (rendimento 35 +
+    acerto 15), confluência 20, entrada não esticada 10, liquidez 10, posicionamento 10, +3 se imediato."""
+    plano = linha["plano"]
+    sgn = 1 if plano["direcao"] == "LONG" else -1
+    n, exp, acerto = bt.get("n") or 0, bt.get("exp_r"), bt.get("acerto")
     peso = n / (n + 4)  # poucas operações no histórico valem menos
     nota = 0.0
-    # 1) backtest: rendimento médio (35) e taxa de acerto (15)
+    # backtest
     if exp is not None:
-        nota += 35 * max(0.0, min(1.0, (exp * peso + 0.3) / 1.0))
-        nota += 15 * max(0.0, min(1.0, ((ac or 0) / 100 * peso + 0.5 * (1 - peso) - 0.3) / 0.4))
+        nota += 35 * _limitar((exp * peso + 0.3) / 1.0)
+        nota += 15 * _limitar(((acerto or 0) / 100 * peso + 0.5 * (1 - peso) - 0.3) / 0.4)
     else:
         nota += 35 * 0.3 + 15 * 0.3
-    # 2) confluência (20): pontuação e tempos gráficos a favor
+    # confluência: pontuação e tempos gráficos a favor
     nota += 12 * min(1.0, abs(linha["pontuacao"] or 0) / 7)
     nota += 8 * sum(1 for k in ("t1d", "t4h", "t1h") if (linha.get(k) or 0) * sgn > 0) / 3
-    # 3) entrada não esticada (10): RSI 4H longe dos extremos na direção da operação
-    r4 = linha.get("rsi_4h") or 50
-    esticado = (r4 - 50) * sgn  # positivo = já andou a favor
-    nota += 10 * max(0.0, min(1.0, 1 - max(0.0, esticado - 10) / 20))
-    # 4) liquidez (10): de US$ 5 mi (0) a US$ 500 mi (1)
-    nota += 10 * max(0.0, min(1.0, (math.log10(max(linha["vol_usd_m"], 0.01)) - math.log10(5)) / 2))
-    # 5) posicionamento (10): multidão do outro lado
+    # entrada: RSI 4H já andou mais de 10 pontos a favor perde nota, até zerar em 30
+    andou = ((linha.get("rsi_4h") or 50) - 50) * sgn
+    nota += 10 * _limitar(1 - max(0.0, andou - 10) / 20)
+    # liquidez: de US$ 5 mi (0) a US$ 500 mi (1), em escala log
+    nota += 10 * _limitar((math.log10(max(linha["vol_usd_m"], 0.01)) - math.log10(5)) / 2)
+    # posicionamento: multidão do outro lado
     fr, ls = linha.get("funding"), linha.get("long_short")
     pos = 0.5
     if fr is not None:
         pos += 0.25 if fr * sgn < 0 else (-0.25 if fr * sgn > 0.02 else 0)
     if ls is not None:
-        pos += 0.25 if (sgn > 0 and ls < 1) or (sgn < 0 and ls > 2) else (-0.25 if (sgn > 0 and ls > 3) or (sgn < 0 and ls < 0.8) else 0)
-    nota += 10 * max(0.0, min(1.0, pos))
-    # imediato com tudo alinhado vale um pouco mais que esperar gatilho
-    if p["tipo"] == "imediato":
+        contra = (sgn > 0 and ls < 1) or (sgn < 0 and ls > 2)
+        lotado = (sgn > 0 and ls > 3) or (sgn < 0 and ls < 0.8)
+        pos += 0.25 if contra else (-0.25 if lotado else 0)
+    nota += 10 * _limitar(pos)
+    if plano["tipo"] == "imediato":
         nota += 3
     return int(round(max(0, min(100, nota))))
 
 
-def universo(min_vol):
-    """Todas as criptos com perpétuo USDT ativo na OKX, com volume de 24h em dólares >= min_vol."""
-    inst = get("/public/instruments?instType=SWAP") or []
-    tick = {t["instId"]: t for t in (get("/market/tickers?instType=SWAP") or [])}
-    out = []
-    for x in inst:
-        iid = x.get("instId", "")
-        if not iid.endswith("-USDT-SWAP") or x.get("instCategory") != "1" or x.get("ruleType") != "normal" or x.get("state") != "live":
-            continue
-        ccy = iid.split("-")[0]
-        if ccy in ESTAVEIS or iid not in tick:
-            continue
-        t = tick[iid]
-        try:
-            last, open24, volccy = float(t["last"]), float(t["open24h"]), float(t["volCcy24h"])
-        except (KeyError, ValueError):
-            continue
-        vol = volccy * last
-        if vol >= min_vol:
-            out.append({"ativo": ccy, "preco": last, "var_24h": rd((last / open24 - 1) * 100) if open24 else None, "vol_usd_m": rd(vol / 1e6)})
-    return sorted(out, key=lambda r: -r["vol_usd_m"])
+def backtest_negativo(bt: Optional[dict]) -> bool:
+    bt = bt or {}
+    return (bt.get("n") or 0) >= BT_MIN_OPERACOES and (bt.get("exp_r") or 0) <= 0
 
 
-def linha_radar(base, a):
-    """Uma linha compacta da tabela do radar (o que o painel mostra para cada moeda)."""
-    tf, d, st = a["timeframes"], a["derivativos"], a["setup"]
-    d1, h4, h1 = tf.get("1D"), tf.get("4H"), tf.get("1H")
-    plano = None
-    if st.get("entrada") is not None:
-        plano = {"direcao": st["direcao"], "tipo": "imediato", "entrada": st["entrada"], "stop": st["stop"], "alvo1": st["alvo1"], "alvo2": st["alvo2"]}
-    elif st.get("plano_condicional"):
-        pc = st["plano_condicional"]
-        plano = {"direcao": pc["direcao"], "tipo": "condicional", "entrada": pc["entrada"], "stop": pc["stop"], "alvo1": pc["alvo1"], "alvo2": pc["alvo2"]}
-    return dict(base, **{
-        "t1d": d1 and d1["tendencia"], "t4h": h4 and h4["tendencia"], "t1h": h1 and h1["tendencia"],
-        "rsi_1d": d1 and d1["rsi14"], "rsi_4h": h4 and h4["rsi14"],
-        "ema200_1d": d1 and d1["ema200"], "suporte": h4 and (h4["suportes"] or [None])[0], "resistencia": h4 and (h4["resistencias"] or [None])[0],
-        "funding": d.get("funding_8h_pct"), "oi_7d": d.get("oi_var_7d_pct"), "long_short": d.get("long_short_contas"),
-        "pontuacao": st.get("pontuacao"), "setup": st.get("direcao"), "motivos": st.get("motivos", []), "plano": plano,
-        "bt": st.get("backtest"), "qualidade": None, "top10": None,
-    })
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("ativos", nargs="*")
-    ap.add_argument("--todas", action="store_true")
-    ap.add_argument("--min-vol", type=float, default=1_000_000)
-    ap.add_argument("--saida")
-    ap.add_argument("--scanner")
-    ap.add_argument("--top", type=int, default=12)
-    ap.add_argument("--threads", type=int, default=6)
-    args = ap.parse_args()
-    agora = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-    if not args.todas:
-        ativos = [a.upper() for a in args.ativos] or ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE"]
-        res = {"gerado_em": agora, "fonte": "OKX perpétuos USDT", "ativos": {}}
-        for ccy in ativos:
-            res["ativos"][ccy] = analisar(ccy)
-        json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
-        return
-
-    uni = universo(args.min_vol)
-    if not uni:
-        print(json.dumps({"erro": "não consegui listar as moedas da OKX"}, ensure_ascii=False)); sys.exit(1)
-    with ThreadPoolExecutor(max_workers=args.threads) as ex:
-        res_list = list(ex.map(lambda b: (b, analisar(b["ativo"])), uni))
-    completo = {"gerado_em": agora, "fonte": "OKX perpétuos USDT (todas as criptos com volume)", "min_vol_usd": args.min_vol, "ativos": {}}
-    linhas, falhas = [], []
-    for base, a in res_list:
-        if not (a["timeframes"].get("1D") and a["timeframes"].get("4H") and a["timeframes"].get("1H")):
-            falhas.append(base["ativo"]); continue
-        completo["ativos"][base["ativo"]] = dict(a, ticker=base)
-        linhas.append(linha_radar(base, a))
-    # nota de qualidade e top 10
+def marcar_top10(linhas: List[dict]) -> List[dict]:
+    """Dá a nota a cada linha com plano e marca o Top 10. Devolve as elegíveis, melhores primeiro."""
     elegiveis = []
     for ln in linhas:
         if not ln["plano"]:
             continue
         ln["qualidade"] = qualidade(ln, ln["bt"] or {})
-        bt = ln["bt"] or {}
-        negativo = (bt.get("n") or 0) >= 3 and (bt.get("exp_r") or 0) <= 0
-        if ln["vol_usd_m"] >= 5 and not negativo:
+        if ln["vol_usd_m"] >= VOLUME_MIN_TOP_MI and not backtest_negativo(ln["bt"]):
             elegiveis.append(ln)
     elegiveis.sort(key=lambda x: (-x["qualidade"], -x["vol_usd_m"]))
-    for k, ln in enumerate(elegiveis[:10], 1):
-        ln["top10"] = k
-    if args.saida:
-        json.dump(completo, open(args.saida, "w"), ensure_ascii=False)
-    if args.scanner:
-        doc = {"at": agora, "min_vol_usd": args.min_vol, "total": len(linhas), "falhas": falhas,
-               "moedas_json": json.dumps(linhas, ensure_ascii=False, separators=(",", ":"))}
-        json.dump(doc, open(args.scanner, "w"), ensure_ascii=False)
-    cand = [l for l in linhas if l["plano"]]
-    top = elegiveis[:10]
-    resumo = {
-        "gerado_em": agora, "moedas_analisadas": len(linhas), "falhas": falhas, "min_vol_usd": args.min_vol,
-        "com_setup": len(cand), "vies_alta": sum(1 for l in linhas if (l["pontuacao"] or 0) >= 3),
-        "vies_baixa": sum(1 for l in linhas if (l["pontuacao"] or 0) <= -3),
-        "regra_top10": "nota de qualidade 0-100 (backtest 4H do mesmo plano na moeda, confluência, RSI, liquidez, posicionamento); só moedas com plano, volume >= US$ 5 mi e sem backtest negativo",
-        "top10": [dict(l, detalhe=completo["ativos"][l["ativo"]]) for l in top],
-        "fora_do_top10": [{"ativo": l["ativo"], "qualidade": l["qualidade"], "plano": l["plano"]["direcao"] + " " + l["plano"]["tipo"], "bt": l["bt"]}
-                          for l in sorted(cand, key=lambda x: -(x["qualidade"] or 0)) if not l["top10"]][:args.top],
+    for pos, ln in enumerate(elegiveis[:TOP_N], 1):
+        ln["top10"] = pos
+    return elegiveis
+
+# ---------------------------------------------------------------- radar de todas as moedas
+
+
+def universo(min_vol: float) -> List[dict]:
+    """Todas as criptos com perpétuo USDT ativo na OKX, com volume de 24h em dólares >= min_vol."""
+    instrumentos = okx.get("/public/instruments?instType=SWAP") or []
+    tickers = {t["instId"]: t for t in (okx.get("/market/tickers?instType=SWAP") or [])}
+    out = []
+    for x in instrumentos:
+        iid = x.get("instId", "")
+        cripto_ativo = (iid.endswith("-USDT-SWAP") and x.get("instCategory") == "1"
+                        and x.get("ruleType") == "normal" and x.get("state") == "live")
+        ccy = iid.split("-")[0]
+        if not cripto_ativo or ccy in ESTAVEIS or iid not in tickers:
+            continue
+        t = tickers[iid]
+        try:
+            ultimo, abertura, vol_moeda = float(t["last"]), float(t["open24h"]), float(t["volCcy24h"])
+        except (KeyError, ValueError):
+            continue
+        vol = vol_moeda * ultimo
+        if vol >= min_vol:
+            out.append({"ativo": ccy, "preco": ultimo,
+                        "var_24h": rd_sig((ultimo / abertura - 1) * 100) if abertura else None,
+                        "vol_usd_m": rd_sig(vol / 1e6)})
+    return sorted(out, key=lambda r: -r["vol_usd_m"])
+
+
+def plano_da_linha(st: dict) -> Optional[dict]:
+    """O plano do setup no formato da tabela do radar (imediato ou condicional)."""
+    niveis = ("entrada", "stop", "alvo1", "alvo2")
+    if st.get("entrada") is not None:
+        return {"direcao": st["direcao"], "tipo": "imediato", **{k: st[k] for k in niveis}}
+    pc = st.get("plano_condicional")
+    if pc:
+        return {"direcao": pc["direcao"], "tipo": "condicional", **{k: pc[k] for k in niveis}}
+    return None
+
+
+def linha_radar(base: dict, a: dict) -> dict:
+    """Uma linha compacta da tabela do radar (o que o painel mostra para cada moeda)."""
+    tf, d, st = a["timeframes"], a["derivativos"], a["setup"]
+    d1, h4, h1 = tf.get("1D"), tf.get("4H"), tf.get("1H")
+    return dict(base, **{
+        "t1d": d1 and d1["tendencia"], "t4h": h4 and h4["tendencia"], "t1h": h1 and h1["tendencia"],
+        "rsi_1d": d1 and d1["rsi14"], "rsi_4h": h4 and h4["rsi14"],
+        "ema200_1d": d1 and d1["ema200"],
+        "suporte": h4 and (h4["suportes"] or [None])[0], "resistencia": h4 and (h4["resistencias"] or [None])[0],
+        "funding": d.get("funding_8h_pct"), "oi_7d": d.get("oi_var_7d_pct"), "long_short": d.get("long_short_contas"),
+        "pontuacao": st.get("pontuacao"), "setup": st.get("direcao"), "motivos": st.get("motivos", []),
+        "plano": plano_da_linha(st), "bt": st.get("backtest"), "qualidade": None, "top10": None,
+    })
+
+
+def varrer(min_vol: float, threads: int):
+    """Analisa todo o universo. Devolve (completo, linhas do radar, moedas que falharam)."""
+    uni = universo(min_vol)
+    if not uni:
+        return None, [], []
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        analises = list(ex.map(lambda b: (b, analisar(b["ativo"])), uni))
+    completo = {"gerado_em": agora_iso(), "fonte": "OKX perpétuos USDT (todas as criptos com volume)",
+                "min_vol_usd": min_vol, "ativos": {}}
+    linhas, falhas = [], []
+    for base, a in analises:
+        if not all(a["timeframes"].get(tf) for tf in TEMPOS_GRAFICOS):
+            falhas.append(base["ativo"])
+            continue
+        completo["ativos"][base["ativo"]] = dict(a, ticker=base)
+        linhas.append(linha_radar(base, a))
+    return completo, linhas, falhas
+
+
+def montar_resumo(completo: dict, linhas: List[dict], falhas: List[str], elegiveis: List[dict],
+                  min_vol: float, top: int) -> dict:
+    """O que a rodada lê: contagens, o Top 10 com o detalhe completo e as melhores de fora."""
+    com_plano = [l for l in linhas if l["plano"]]
+    fora = sorted(com_plano, key=lambda x: -(x["qualidade"] or 0))
+    return {
+        "gerado_em": completo["gerado_em"], "moedas_analisadas": len(linhas), "falhas": falhas, "min_vol_usd": min_vol,
+        "com_setup": len(com_plano),
+        "vies_alta": sum(1 for l in linhas if (l["pontuacao"] or 0) >= PONTUACAO_PLANO),
+        "vies_baixa": sum(1 for l in linhas if (l["pontuacao"] or 0) <= -PONTUACAO_PLANO),
+        "regra_top10": "nota de qualidade 0-100 (backtest 4H do mesmo plano na moeda, confluência, RSI, liquidez, "
+                       "posicionamento); só moedas com plano, volume >= US$ 5 mi e sem backtest negativo",
+        "top10": [dict(l, detalhe=completo["ativos"][l["ativo"]]) for l in elegiveis[:TOP_N]],
+        "fora_do_top10": [{"ativo": l["ativo"], "qualidade": l["qualidade"],
+                           "plano": l["plano"]["direcao"] + " " + l["plano"]["tipo"], "bt": l["bt"]}
+                          for l in fora if not l["top10"]][:top],
     }
+
+
+def salvar_json(caminho: str, obj) -> None:
+    with open(caminho, "w") as f:
+        json.dump(obj, f, ensure_ascii=False)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("ativos", nargs="*", help="moedas para analisar (modo simples)")
+    ap.add_argument("--todas", action="store_true", help="varre todas as criptos com perpétuo USDT")
+    ap.add_argument("--min-vol", type=float, default=1_000_000, help="volume mínimo em 24h, em dólares")
+    ap.add_argument("--saida", help="arquivo para o JSON completo")
+    ap.add_argument("--scanner", help="arquivo para a tabela do radar (formato do painel)")
+    ap.add_argument("--top", type=int, default=12, help="quantas moedas de fora do Top 10 listar no resumo")
+    ap.add_argument("--threads", type=int, default=6)
+    args = ap.parse_args()
+
+    if not args.todas:
+        ativos = [a.upper() for a in args.ativos] or ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE"]
+        res = {"gerado_em": agora_iso(), "fonte": "OKX perpétuos USDT", "ativos": {ccy: analisar(ccy) for ccy in ativos}}
+        json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
+        return
+
+    completo, linhas, falhas = varrer(args.min_vol, args.threads)
+    if completo is None:
+        print(json.dumps({"erro": "não consegui listar as moedas da OKX"}, ensure_ascii=False))
+        sys.exit(1)
+    elegiveis = marcar_top10(linhas)
+    if args.saida:
+        salvar_json(args.saida, completo)
+    if args.scanner:
+        salvar_json(args.scanner, {"at": completo["gerado_em"], "min_vol_usd": args.min_vol, "total": len(linhas),
+                                   "falhas": falhas, "moedas_json": json_compacto(linhas)})
+    resumo = montar_resumo(completo, linhas, falhas, elegiveis, args.min_vol, args.top)
     json.dump(resumo, sys.stdout, ensure_ascii=False, indent=1)
 
 
