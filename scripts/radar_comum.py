@@ -20,8 +20,10 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 OKX_API = "https://www.okx.com/api/v5"
 USER_AGENT = "Mozilla/5.0 radar-cripto/1.0"
-# requisições por segundo, com folga sobre os limites da OKX por IP (candles 40/2s, public 20/2s, rubik 5/2s)
-LIMITES_OKX = {"/market/": 12.0, "/public/": 6.0, "/rubik/": 2.0}
+# requisições por segundo, com folga sobre os limites da OKX por IP
+# (histórico de candles 20/2s, candles 40/2s, public 20/2s, rubik 5/2s).
+# A ordem importa: vale o primeiro prefixo que casar.
+LIMITES_OKX = {"/market/history-candles": 8.0, "/market/": 12.0, "/public/": 6.0, "/rubik/": 2.0}
 
 
 class ClienteOKX:
@@ -104,14 +106,33 @@ FINAIS = FINAIS_COM_RESULTADO | FINAIS_SEM_OPERACAO
 ABERTOS = frozenset({"aberto", "alvo1 (aberto)"})
 
 
+def numero(x) -> float:
+    """Converte um preço de sinal em float. Aceita vírgula decimal ("79,12"); erro se não for número."""
+    if isinstance(x, str) and "," in x and "." not in x:
+        x = x.replace(",", ".")
+    v = float(x)
+    if v != v or v in (float("inf"), float("-inf")):
+        raise ValueError(f"preço inválido: {x!r}")
+    return v
+
+
 def carregar_sinais(caminho: str) -> List[dict]:
     """Lê a lista de sinais. Aceita uma lista simples de sinais (cada um com "id") ou a saída do
-    ArtifactData (objetos {"id", "data"}, soltos ou dentro de "documents"/"docs")."""
+    ArtifactData (objetos {"id", "data"}, soltos ou dentro de "documents"/"docs").
+    Um id repetido (o mesmo sinal na coleção e no arquivo) conta uma vez só: vale o primeiro."""
     with open(caminho) as f:
         sinais = json.load(f)
     if isinstance(sinais, dict):
         sinais = sinais.get("documents") or sinais.get("docs") or list(sinais.values())
-    return [dict(x.get("data", {}), id=x["id"]) if "data" in x else x for x in sinais]
+    vistos, out = set(), []
+    for x in sinais:
+        s = dict(x.get("data", {}), id=x["id"]) if "data" in x else x
+        chave = s.get("id")
+        if chave is not None and chave in vistos:
+            continue
+        vistos.add(chave)
+        out.append(s)
+    return out
 
 
 # ---------------------------------------------------------------- gestão de uma operação

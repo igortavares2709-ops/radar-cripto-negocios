@@ -279,3 +279,93 @@ class TestCarregarSinais(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRobustez(unittest.TestCase):
+    """Dados ruins numa moeda ou num sinal não podem derrubar a rodada inteira."""
+
+    def test_volume_zero_nao_quebra(self):
+        k = {"o": [1.0] * 80, "h": [1.1] * 80, "l": [0.9] * 80, "c": [1.0] * 80, "v": [0.0] * 80}
+        self.assertIsNone(at.analisar_tempo_grafico(k)["volume_vs_media50"])
+
+    def test_atr_zero_nao_gera_plano(self):
+        tf = {"tendencia": 3, "rsi14": 50.0, "macd_hist": 1.0, "macd_hist_ant": 0.5, "fechamento": 100.0,
+              "atr14": 0.0, "ema20": 100.0, "suportes": [], "resistencias": []}
+        st = at.setup({"1D": tf, "4H": tf, "1H": tf}, {})
+        self.assertEqual(st["direcao"], "SEM SINAL")
+        self.assertNotIn("entrada", st)
+        self.assertNotIn("plano_condicional", st)
+
+    def test_open_interest_zerado_so_some_o_campo(self):
+        orig = at.okx.get
+        at.okx.get = lambda p: [["0", "0"]] * 8 if "open-interest" in p else [{"fundingRate": ""}] if "funding" in p else None
+        try:
+            d = at.derivativos("X", "X-USDT-SWAP")
+        finally:
+            at.okx.get = orig
+        self.assertEqual(d, {"oi_usd": 0.0})
+
+    def test_moeda_quebrada_nao_derruba_a_varredura(self):
+        orig_uni, orig_an = at.universo, at.analisar
+        at.universo = lambda mv: [{"ativo": "RUIM", "preco": 1, "var_24h": 0, "vol_usd_m": 9}]
+        at.analisar = lambda ccy: 1 / 0
+        try:
+            completo, linhas, falhas = at.varrer(1, 2)
+        finally:
+            at.universo, at.analisar = orig_uni, orig_an
+        self.assertEqual((linhas, falhas), ([], ["RUIM"]))
+
+    def test_sinal_ruim_nao_derruba_a_conferencia(self):
+        orig = av.candles_1h
+        av.candles_1h = lambda ccy, desde=None: candles((105, 95, 100), (101, 89, 92))
+        try:
+            out = av.avaliar_todos([sinal(id="ruim", at="data ruim"), sinal(id="bom"),
+                                    sinal(id="virgula", entrada="100,0")], T0 + 5 * HORA)
+        finally:
+            av.candles_1h = orig
+        self.assertIn("dados inválidos", out["ruim"]["nota"])
+        self.assertEqual(out["bom"]["status"], "stop")
+        self.assertEqual(out["virgula"]["status"], "stop")  # vírgula decimal é aceita
+
+    def test_candles_que_comecam_depois_do_sinal_adiam_a_conferencia(self):
+        k = candles((105, 95, 100), t0=T0 + 10 * HORA)
+        r = av.avaliar(sinal(status="aberto"), k, T0 + 20 * HORA)
+        self.assertEqual(r["status"], "aberto")
+        self.assertIn("adiada", r["nota"])
+
+    def test_busca_historico_quando_300h_nao_bastam(self):
+        recentes = [[str(T0 + i * HORA), "1", "2", "0.5", "1"] for i in range(300, 600)]
+        antigas = [[str(T0 + i * HORA), "1", "2", "0.5", "1"] for i in range(200, 300)]
+        chamadas = []
+
+        def falso_get(path):
+            chamadas.append(path)
+            if "history-candles" in path:
+                return antigas if f"after={T0 + 300 * HORA}" in path else []
+            return recentes
+        orig = av.okx.get
+        av.okx.get = falso_get
+        try:
+            k = av.candles_1h("BTC", desde=T0 + 250 * HORA)
+        finally:
+            av.okx.get = orig
+        self.assertEqual(k["t"][0], T0 + 200 * HORA)
+        self.assertEqual(len(k["t"]), 400)
+        self.assertEqual(k["t"], sorted(k["t"]))
+
+
+class TestArquivoEPlacar(unittest.TestCase):
+    def test_id_repetido_conta_uma_vez(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump([{"id": "a", "x": 1}, {"id": "a", "x": 2}, {"id": "b"}], f)
+        try:
+            self.assertEqual([s.get("x") for s in carregar_sinais(f.name)], [1, None])
+        finally:
+            os.unlink(f.name)
+
+    def test_placar_conta_como_o_painel(self):
+        sinais = [sinal(id="a", status="alvo2", resultado_r=2.25), sinal(id="b", status="stop", resultado_r=-1.0),
+                  sinal(id="c", status="expirado", resultado_r=0), sinal(id="d", status="aberto"),
+                  sinal(id="e", status="aguardando"), sinal(id="f", direcao="AGUARDAR")]
+        self.assertEqual(ct.placar(sinais), {"publicados": 5, "acionados": 3, "encerrados": 2, "abertos": 1,
+                                              "expirados": 1, "taxa_acerto": 50, "r_total": 1.25})

@@ -24,6 +24,7 @@ import argparse
 import json
 import math
 import sys
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
@@ -90,6 +91,7 @@ def analisar_tempo_grafico(k: Dict[str, List[float]]) -> Optional[dict]:
     media20 = sum(c[-20:]) / 20
     desvio20 = (sum((x - media20) ** 2 for x in c[-20:]) / 20) ** 0.5
     topos, fundos = swings(h, l)
+    vol_media50 = sum(v[-50:]) / 50
     tendencia = (1 if ultimo > e20[-1] else -1) + (1 if e20[-1] > e50[-1] else -1)
     if e200:
         tendencia += 1 if ultimo > e200[-1] else -1
@@ -103,25 +105,40 @@ def analisar_tempo_grafico(k: Dict[str, List[float]]) -> Optional[dict]:
         "resistencias": sorted({rd_sig(x) for x in topos if x > ultimo})[:3],
         "suportes": sorted({rd_sig(x) for x in fundos if x < ultimo}, reverse=True)[:3],
         "max_20": max(h[-20:]), "min_20": min(l[-20:]),
-        "volume_vs_media50": rd_sig((sum(v[-5:]) / 5) / (sum(v[-50:]) / 50)),
-        "variacao_10_candles_pct": rd_sig((ultimo / c[-11] - 1) * 100),
+        # moeda recém-listada pode ter volume zero: sem média, sem razão
+        "volume_vs_media50": rd_sig((sum(v[-5:]) / 5) / vol_media50) if vol_media50 > 0 else None,
+        "variacao_10_candles_pct": rd_sig((ultimo / c[-11] - 1) * 100) if c[-11] else None,
         "tendencia": tendencia,  # -3 (baixa forte) a +3 (alta forte)
     }
 
 
+def _numero(x) -> Optional[float]:
+    """float de um campo da OKX, ou None se vier vazio ou estranho."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
 def derivativos(ccy: str, inst: str) -> dict:
-    """Funding atual, open interest (e variação em 7 dias) e relação de contas long/short."""
+    """Funding atual, open interest (e variação em 7 dias) e relação de contas long/short.
+    Um campo que a OKX devolver vazio ou zerado só fica de fora; não derruba a moeda."""
     out = {}
     f = okx.get(f"/public/funding-rate?instId={inst}")
-    if f:
-        out["funding_8h_pct"] = round(float(f[0]["fundingRate"]) * 100, 4)
+    fr = _numero(f[0].get("fundingRate")) if f else None
+    if fr is not None:
+        out["funding_8h_pct"] = round(fr * 100, 4)
     oi = okx.get(f"/rubik/stat/contracts/open-interest-volume?ccy={ccy}&period=1D")
     if oi and len(oi) > 7:
-        out["oi_usd"] = float(oi[0][1])
-        out["oi_var_7d_pct"] = round((float(oi[0][1]) / float(oi[7][1]) - 1) * 100, 2)
+        agora, antes = _numero(oi[0][1]), _numero(oi[7][1])
+        if agora is not None:
+            out["oi_usd"] = agora
+            if antes:
+                out["oi_var_7d_pct"] = round((agora / antes - 1) * 100, 2)
     ls = okx.get(f"/rubik/stat/contracts/long-short-account-ratio?ccy={ccy}&period=1H")
-    if ls:
-        out["long_short_contas"] = float(ls[0][1])
+    razao = _numero(ls[0][1]) if ls else None
+    if razao is not None:
+        out["long_short_contas"] = razao
     return out
 
 # ---------------------------------------------------------------- setup
@@ -211,6 +228,9 @@ def setup(tfs: dict, d: dict) -> dict:
     t1d, t4h, t1h = (tfs.get(k) for k in ("1D", "4H", "1H"))
     if not (t1d and t4h and t1h):
         return {"direcao": "SEM SINAL", "motivo": "dados insuficientes"}
+    if not t4h["atr14"] or t4h["atr14"] <= 0:
+        # preço parado (ATR zero): stop e alvos cairiam em cima da entrada
+        return {"direcao": "SEM SINAL", "motivo": "preço sem oscilação no 4H (ATR zero)"}
     score, motivos = pontuar(t1d, t4h, t1h, d)
     direcao = "LONG" if score >= PONTUACAO_SINAL else "SHORT" if score <= -PONTUACAO_SINAL else "SEM SINAL"
     esticado = motivo_esticado(direcao, t1d, t4h)
@@ -278,6 +298,15 @@ def backtest(k: Dict[str, List[float]], direcao: str, tipo: str) -> dict:
             "exp_r": round(sum(resultados) / len(resultados), 2)}
 
 # ---------------------------------------------------------------- análise de uma moeda
+
+
+def analisar_seguro(ccy: str) -> Optional[dict]:
+    """analisar(), mas um erro numa moeda vira falha dela, sem derrubar a varredura inteira."""
+    try:
+        return analisar(ccy)
+    except Exception:
+        print(f"[radar] {ccy}: erro na análise, moeda pulada\n{traceback.format_exc(limit=3)}", file=sys.stderr)
+        return None
 
 
 def analisar(ccy: str) -> dict:
@@ -415,12 +444,12 @@ def varrer(min_vol: float, threads: int):
     if not uni:
         return None, [], []
     with ThreadPoolExecutor(max_workers=threads) as ex:
-        analises = list(ex.map(lambda b: (b, analisar(b["ativo"])), uni))
+        analises = list(ex.map(lambda b: (b, analisar_seguro(b["ativo"])), uni))
     completo = {"gerado_em": agora_iso(), "fonte": "OKX perpétuos USDT (todas as criptos com volume)",
                 "min_vol_usd": min_vol, "ativos": {}}
     linhas, falhas = [], []
     for base, a in analises:
-        if not all(a["timeframes"].get(tf) for tf in TEMPOS_GRAFICOS):
+        if a is None or not all(a["timeframes"].get(tf) for tf in TEMPOS_GRAFICOS):
             falhas.append(base["ativo"])
             continue
         completo["ativos"][base["ativo"]] = dict(a, ticker=base)
@@ -465,7 +494,7 @@ def main():
 
     if not args.todas:
         ativos = [a.upper() for a in args.ativos] or ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE"]
-        res = {"gerado_em": agora_iso(), "fonte": "OKX perpétuos USDT", "ativos": {ccy: analisar(ccy) for ccy in ativos}}
+        res = {"gerado_em": agora_iso(), "fonte": "OKX perpétuos USDT", "ativos": {ccy: analisar_seguro(ccy) for ccy in ativos}}
         json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
         return
 

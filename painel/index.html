@@ -400,7 +400,7 @@
 
   <section id="desempenho">
     <h2 class="rd-h2">Histórico e desempenho dos sinais</h2>
-    <p class="rd-sub">Todo sinal LONG ou SHORT já publicado, conferido a cada rodada contra os candles de 1h da OKX. Regras: o condicional começa quando o preço toca a entrada e expira se não tocar em 48h; no alvo 1 sai metade e o stop vai para a entrada; stop e alvo no mesmo candle contam como stop; 1R é a distância entre a entrada e o stop.</p>
+    <p class="rd-sub">Os sinais LONG ou SHORT dos últimos 30 dias, conferidos a cada rodada contra os candles de 1h da OKX. Os encerrados há mais tempo vão para o arquivo, mas continuam contando no placar, na curva e na carteira. Regras: o condicional começa quando o preço toca a entrada e expira se não tocar em 48h; no alvo 1 sai metade e o stop vai para a entrada; stop e alvo no mesmo candle contam como stop; 1R é a distância entre a entrada e o stop.</p>
     <div class="rd-placar" data-draw="placar" data-source="placar"></div>
     <div class="rd-grid2" style="margin-bottom: var(--cds-gap-lg)">
       <div class="rd-card" id="grafico-postura">
@@ -614,6 +614,8 @@ window.rdSrc = (el, source, field, where) => {
   if (where != null) el.setAttribute(String(where).startsWith('row:') ? 'data-row' : 'data-where', String(where).replace(/^row:/, ''));
   return el;
 };
+// Lista guardada como texto JSON num campo do painel (ex.: extrato_json); [] se vier vazia ou quebrada.
+window.rdParse = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const x = JSON.parse(v); return Array.isArray(x) ? x : []; } catch (e) { return []; } } return []; };
 window.rdWhereId = (id) => 'id=' + encodeURIComponent(id);
 // Linha de aviso numa tabela vazia.
 window.rdEmptyRow = (tb, cols, msg) => { const td = tb.insertRow().insertCell(); td.colSpan = cols; td.className = 'rd-empty'; td.textContent = msg; };
@@ -904,9 +906,11 @@ dash.draw('futuros', (el) => {
 // Placar
 dash.calc('placar', {
   title: 'Placar dos sinais de futuros',
-  description: 'Conta os sinais LONG/SHORT por situação e soma o resultado em R dos que já foram encerrados.',
-  inputs: ['futuros'],
-  fn: (futuros) => {
+  description: 'Conta os sinais LONG/SHORT por situação e soma o resultado em R dos que já foram encerrados. Usa o placar completo da carteira (que inclui os sinais arquivados) e, sem ele, conta os sinais desta coleção.',
+  inputs: ['futuros', 'carteira'],
+  fn: (futuros, carteira) => {
+    const doc = Array.isArray(carteira) ? carteira[0] : carteira;
+    if (doc && doc.placar && typeof doc.placar === 'object') return [{...doc.placar}];
     const ops = futuros.filter((f) => f.direcao === 'LONG' || f.direcao === 'SHORT');
     const fechados = ops.filter((f) => RD_FECHADOS.includes(f.status) && typeof f.resultado_r === 'number');
     const acertos = fechados.filter((f) => f.resultado_r > 0).length;
@@ -1004,9 +1008,15 @@ dash.draw('chart-postura', (el) => {
 // Curva de resultado
 dash.calc('curva_r', {
   title: 'Curva de resultado em R',
-  description: 'Os sinais LONG/SHORT encerrados, em ordem de encerramento, com o resultado em R de cada um e a soma acumulada.',
-  inputs: ['futuros'],
-  fn: (futuros) => {
+  description: 'Os sinais LONG/SHORT encerrados, em ordem de encerramento, com o resultado em R de cada um e a soma acumulada. Vem do extrato da carteira (que inclui os sinais arquivados) e, sem ele, dos sinais desta coleção.',
+  inputs: ['futuros', 'carteira'],
+  fn: (futuros, carteira) => {
+    const doc = Array.isArray(carteira) ? carteira[0] : carteira;
+    const extrato = doc ? rdParse(doc.extrato_json) : [];
+    if (extrato.length) {
+      let soma = 0;
+      return extrato.filter((o) => typeof o.r === 'number').map((o) => { soma += o.r; return {id: o.id, quando: o.encerrado_em, ativo: o.ativo, resultado_r: o.r, acumulado_r: Math.round(soma * 100) / 100}; });
+    }
     const fech = futuros.filter((f) => (f.direcao === 'LONG' || f.direcao === 'SHORT') && RD_FECHADOS.includes(f.status) && typeof f.resultado_r === 'number')
       .sort((a, b) => String(a.encerrado_em || a.at).localeCompare(String(b.encerrado_em || b.at)));
     let acc = 0;
@@ -1490,7 +1500,6 @@ dash.draw('q-radar-d', (el) => {
 });
 
 // ---------- Carteira fictícia ----------
-const rdParse = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const x = JSON.parse(v); return Array.isArray(x) ? x : []; } catch (e) { return []; } } return []; };
 dash.calc('carteira_doc', {
   title: 'Carteira fictícia (resumo)',
   description: 'Saldo da conta fictícia de US$ 2.000 que segue todos os sinais LONG/SHORT: saldo, resultado, operações, acerto e queda máxima.',

@@ -23,7 +23,7 @@ import sys
 from dataclasses import dataclass
 from typing import List, Optional
 
-from radar_comum import ABERTOS, FINAIS_COM_RESULTADO, agora_iso, carregar_sinais, json_compacto, rd2
+from radar_comum import ABERTOS, FINAIS_COM_RESULTADO, agora_iso, carregar_sinais, json_compacto, numero, rd2
 
 
 @dataclass
@@ -66,7 +66,7 @@ def operacoes_dos_sinais(sinais: List[dict]) -> List[Operacao]:
         if st not in FINAIS_COM_RESULTADO and st not in ABERTOS:
             continue
         try:
-            entrada, stop = float(s["entrada"]), float(s["stop"])
+            entrada, stop = numero(s["entrada"]), numero(s["stop"])
         except (KeyError, TypeError, ValueError):
             continue
         if entrada <= 0 or entrada == stop:
@@ -125,6 +125,24 @@ def abertas(ops: List[Operacao], regras: Regras):
     return lista, total
 
 
+def placar(sinais: List[dict]) -> dict:
+    """Placar de TODOS os sinais LONG/SHORT (os arquivados incluídos), com as mesmas contas do painel.
+    Fica no documento da carteira porque o painel só lê os 1.000 registros mais antigos de cada coleção."""
+    ops = [s for s in sinais if s.get("direcao") in ("LONG", "SHORT")]
+    fechados = [s for s in ops if s.get("status") in FINAIS_COM_RESULTADO
+                and isinstance(s.get("resultado_r"), (int, float)) and not isinstance(s.get("resultado_r"), bool)]
+    acertos = sum(1 for s in fechados if s["resultado_r"] > 0)
+    return {
+        "publicados": len(ops),
+        "acionados": sum(1 for s in ops if s.get("status") and s["status"] not in ("aguardando", "expirado", "invalido")),
+        "encerrados": len(fechados),
+        "abertos": sum(1 for s in ops if s.get("status") in ABERTOS),
+        "expirados": sum(1 for s in ops if s.get("status") == "expirado"),
+        "taxa_acerto": round(acertos / len(fechados) * 100) if fechados else None,
+        "r_total": round(sum(s["resultado_r"] for s in fechados), 2),
+    }
+
+
 def carteira(sinais: List[dict], regras: Regras) -> dict:
     """O documento que vai para data/radar/carteira/atual."""
     ops = operacoes_dos_sinais(sinais)
@@ -140,6 +158,7 @@ def carteira(sinais: List[dict], regras: Regras) -> dict:
         "acerto_pct": rd2(100 * ganhos / len(extrato)) if extrato else None,
         "max_drawdown_pct": rd2(sim["max_dd"]), "abertas": len(lista_abertas), "flutuante_usd": rd2(flutuante),
         "regras": regras.descricao(),
+        "placar": placar(sinais),
         "curva_json": json_compacto(sim["curva"]),
         "extrato_json": json_compacto(extrato),
         "abertas_json": json_compacto(lista_abertas),

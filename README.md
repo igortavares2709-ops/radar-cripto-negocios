@@ -53,6 +53,22 @@ A antiga mesa de decisão (regras em [`agentes/mesa_de_decisao.md`](agentes/mesa
 
 O painel mostra o saldo, o resultado, a taxa de acerto, a maior queda, a curva do saldo e o extrato. É simulação: não cobra derrapagem de preço nem funding.
 
+O documento da carteira também guarda o **placar completo** de todos os sinais, inclusive os arquivados. O painel usa esse placar e o extrato para a curva de R, porque só lê os 1.000 registros mais antigos de cada coleção.
+
+## Arquivamento (para o painel não travar com o tempo)
+
+O painel lê no máximo 1.000 registros por coleção, começando pelos mais antigos. A cada rodada, os registros velhos vão para coleções de arquivo, que o painel não lê:
+
+| Coleção | Vai para o arquivo depois de | Arquivo |
+|---|---|---|
+| `data/radar/futuros` (AGUARDAR) | 3 dias | `data/radar/arquivo_futuros` |
+| `data/radar/futuros` (LONG/SHORT encerrados ou expirados) | 30 dias | `data/radar/arquivo_futuros` |
+| `data/radar/sinais` | 10 dias | `data/radar/arquivo_sinais` |
+| `data/radar/briefings` | 60 dias | `data/radar/arquivo_briefings` |
+| `data/radar/renda` | 60 dias | `data/radar/arquivo_renda` |
+
+Os sinais LONG/SHORT arquivados continuam entrando na conferência, no placar e na carteira. Para o banco do painel não lotar (limite de 25.000 registros), os AGUARDAR arquivados há mais de 30 dias e as notas de mercado arquivadas há mais de 90 dias são apagadas: o conteúdo delas já está no relatório de cada rodada.
+
 ## Regras do analista técnico
 
 - LONG ou SHORT imediato só com confluência: a tendência no diário e no 4H tem que concordar.

@@ -28,25 +28,36 @@ import sys
 import time
 from typing import Dict, List, Optional
 
-from radar_comum import FINAIS, Plano, carregar_sinais, gerir, iso, ms, okx, rd2
+from radar_comum import FINAIS, Plano, carregar_sinais, gerir, iso, ms, numero, okx, rd2
 
 GATILHO_MAX_H = 48
 OPERACAO_MAX_H = 7 * 24
 HORA_MS = 3600_000
+MAX_PAGINAS_HISTORICO = 30  # 100 candles por página: até ~4 meses além das 300 horas recentes
 
 
-def candles_1h(ccy: str) -> Optional[Dict[str, List[float]]]:
-    """Os últimos 300 candles de 1h (o candle em andamento incluído), como listas t/h/l/c."""
+def candles_1h(ccy: str, desde: Optional[int] = None) -> Optional[Dict[str, List[float]]]:
+    """Candles de 1h (o em andamento incluído), do mais antigo para o mais novo, como listas t/h/l/c.
+    Começa pelas últimas 300 horas e, se `desde` (ms) for mais antigo, busca páginas do histórico."""
     linhas = okx.get(f"/market/candles?instId={ccy}-USDT-SWAP&bar=1H&limit=300")
     if not linhas:
         return None
     linhas = sorted(linhas, key=lambda r: int(r[0]))
+    paginas = 0
+    while desde is not None and int(linhas[0][0]) > desde and paginas < MAX_PAGINAS_HISTORICO:
+        mais_antigo = int(linhas[0][0])
+        velhas = okx.get(f"/market/history-candles?instId={ccy}-USDT-SWAP&bar=1H&after={mais_antigo}&limit=100")
+        velhas = sorted((r for r in velhas or [] if int(r[0]) < mais_antigo), key=lambda r: int(r[0]))
+        if not velhas:
+            break
+        linhas = velhas + linhas
+        paginas += 1
     return {"t": [int(r[0]) for r in linhas], "h": [float(r[2]) for r in linhas],
             "l": [float(r[3]) for r in linhas], "c": [float(r[4]) for r in linhas]}
 
 
 def plano_do_sinal(s: dict) -> Plano:
-    e, st, a1, a2 = (float(s[k]) for k in ("entrada", "stop", "alvo1", "alvo2"))
+    e, st, a1, a2 = (numero(s[k]) for k in ("entrada", "stop", "alvo1", "alvo2"))
     return Plano(1 if s["direcao"] == "LONG" else -1, e, st, a1, a2)
 
 
@@ -69,6 +80,10 @@ def avaliar(s: dict, candles: dict, agora: int) -> dict:
     if p.risco == 0:
         return {"status": "invalido", "nota": "stop igual à entrada"}
     t0 = ms(s["at"])
+    if candles["t"][0] > t0:
+        # os candles disponíveis começam depois do sinal: sem o começo da operação, não dá para conferir
+        return {"status": s.get("status") or "aguardando",
+                "nota": "candles desde a publicação indisponíveis nesta rodada; conferência adiada"}
     # só candles que começam depois do sinal: o candle em andamento na hora da publicação
     # pode ter tocado a entrada ou o stop antes de o sinal existir
     inicio_serie = next((i for i, t in enumerate(candles["t"]) if t >= t0), None)
@@ -102,20 +117,30 @@ def avaliar(s: dict, candles: dict, agora: int) -> dict:
 
 
 def avaliar_todos(sinais: List[dict], agora: int) -> Dict[str, dict]:
-    """Avalia os sinais LONG/SHORT ainda não encerrados. Baixa os candles de cada moeda uma vez só."""
+    """Avalia os sinais LONG/SHORT ainda não encerrados. Baixa os candles de cada moeda uma vez só,
+    desde o sinal pendente mais antigo dela. Um sinal com dados ruins não atrapalha os outros."""
+    pendentes = [s for s in sinais if s.get("direcao") in ("LONG", "SHORT") and s.get("entrada") is not None
+                 and s.get("status") not in FINAIS]  # encerrado não muda mais
+    desde: Dict[str, int] = {}
+    for s in pendentes:
+        try:
+            ccy, t0 = str(s["ativo"]).upper(), ms(s["at"])
+        except Exception:
+            continue
+        desde[ccy] = min(desde.get(ccy, t0), t0)
     cache, out = {}, {}
-    for s in sinais:
-        if s.get("direcao") not in ("LONG", "SHORT") or s.get("entrada") is None:
-            continue
-        if s.get("status") in FINAIS:
-            continue  # já encerrado: não muda mais
-        ccy = s["ativo"].upper()
-        if ccy not in cache:
-            cache[ccy] = candles_1h(ccy)
-        if not cache[ccy]:
-            out[s["id"]] = {"status": s.get("status") or "aguardando", "nota": "candles indisponíveis nesta rodada"}
-            continue
-        r = avaliar(s, cache[ccy], agora)
+    for s in pendentes:
+        try:
+            ccy = str(s["ativo"]).upper()
+            if ccy not in cache:
+                cache[ccy] = candles_1h(ccy, desde.get(ccy))
+            if not cache[ccy]:
+                r = {"status": s.get("status") or "aguardando", "nota": "candles indisponíveis nesta rodada"}
+            else:
+                r = avaliar(s, cache[ccy], agora)
+        except Exception as e:
+            print(f"[conferência] {s.get('id')}: {type(e).__name__}: {e}", file=sys.stderr)
+            r = {"status": s.get("status") or "aguardando", "nota": f"sinal com dados inválidos, não conferido ({type(e).__name__})"}
         r["verificado_em"] = iso(agora)
         out[s["id"]] = r
     return out
