@@ -7,10 +7,16 @@ Uso:
   python3 analise_tecnica.py --todas [--min-vol 1000000] [--saida ta.json] [--scanner scanner.json] [--top 12]
       varre TODAS as criptos com perpétuo USDT na OKX (instCategory 1, sem ações nem commodities,
       sem stablecoins) com volume de 24h acima de --min-vol dólares. Grava o JSON completo em --saida,
-      a tabela compacta do radar em --scanner e imprime um resumo com os melhores candidatos.
+      a tabela compacta do radar em --scanner e imprime um resumo com as 10 melhores oportunidades.
+
+Top 10: cada moeda com plano (imediato ou condicional) e mais de US$ 5 milhões por dia ganha uma
+nota de qualidade de 0 a 100. A nota junta o backtest do mesmo plano na própria moeda (candles 4H
+dos últimos ~50 dias: quantas vezes deu lucro e quanto rendeu em R), a confluência dos tempos
+gráficos, o RSI (entrada esticada perde pontos), a liquidez e o posicionamento (funding e contas
+long/short contra a multidão). As 10 maiores notas, sem backtest negativo, são o "top 10".
 Só biblioteca padrão. Nada aqui é recomendação de investimento.
 """
-import argparse, json, sys, threading, time, urllib.request
+import argparse, json, math, sys, threading, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 API = "https://www.okx.com/api/v5"
@@ -130,6 +136,7 @@ def tf_analysis(inst, bar, limit):
         "volume_vs_media50": rd(vol_ratio),
         "variacao_10_candles_pct": rd((last / c[-11] - 1) * 100),
         "tendencia": trend,  # -3 (baixa forte) a +3 (alta forte)
+        "_serie": {"h": h, "l": l, "c": c} if bar == "4H" else None,  # só para o backtest; não vai para a saída
     }
 
 
@@ -194,11 +201,119 @@ def setup(a, d):
     return out
 
 
+def _gerir(h, l, c, i0, sgn, e, st, a1, a2, max_barras=42):
+    """Mesma gestão do avaliar_sinais.py: stop primeiro; no alvo 1 sai metade e o stop vai para a entrada.
+    Devolve (resultado em R, índice do candle de saída)."""
+    risco = abs(e - st)
+    r1, r2 = abs(a1 - e) / risco, abs(a2 - e) / risco
+    stop, meia = st, False
+    fim = min(len(c), i0 + max_barras)
+    for j in range(i0, fim):
+        bs = (sgn > 0 and l[j] <= stop) or (sgn < 0 and h[j] >= stop)
+        b1 = (sgn > 0 and h[j] >= a1) or (sgn < 0 and l[j] <= a1)
+        b2 = (sgn > 0 and h[j] >= a2) or (sgn < 0 and l[j] <= a2)
+        if not meia:
+            if bs: return -1.0, j
+            if b1:
+                meia, stop = True, e
+                if b2: return (r1 + r2) / 2, j
+        else:
+            if bs: return r1 / 2, j
+            if b2: return (r1 + r2) / 2, j
+    if fim >= len(c):
+        return None, len(c)  # ainda aberto no fim da série: não conta
+    aberto = sgn * (c[fim - 1] - e) / risco
+    return ((r1 + aberto) / 2 if meia else aberto), fim - 1
+
+
+def backtest(serie, direcao, tipo):
+    """Testa o mesmo tipo de plano nos candles 4H da própria moeda (sem olhar o futuro).
+    Uma operação por vez. Gatilho de condicional: até 12 candles (48h). Prazo: 42 candles (7 dias)."""
+    h, l, c = serie["h"], serie["l"], serie["c"]
+    sgn = 1 if direcao == "LONG" else -1
+    e20, e50 = ema(c, 20), ema(c, 50)
+    # ATR de 14 candles em cada ponto
+    tr = [h[0] - l[0]] + [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(1, len(c))]
+    at = [0.0] * len(c)
+    at[14] = sum(tr[1:15]) / 14
+    for i in range(15, len(c)):
+        at[i] = (at[i - 1] * 13 + tr[i]) / 14
+    rs, i = [], 60
+    while i < len(c) - 1:
+        a = at[i]
+        regime = (1 if c[i] > e20[i] else -1) + (1 if e20[i] > e50[i] else -1)
+        if a <= 0 or regime * sgn < 2:
+            i += 1; continue
+        if tipo == "imediato":
+            e = c[i]; st = e - sgn * 1.5 * a; risco = 1.5 * a
+            a1, a2, i0 = e + sgn * 1.5 * risco, e + sgn * 3 * risco, i + 1
+        else:
+            e = min(e20[i], c[i] - 0.5 * a) if sgn > 0 else max(e20[i], c[i] + 0.5 * a)
+            st, a1, a2 = e - sgn * 1.5 * a, e + sgn * 2.25 * a, e + sgn * 4.5 * a
+            i0 = None
+            for j in range(i + 1, min(len(c), i + 13)):
+                if (sgn > 0 and l[j] <= e) or (sgn < 0 and h[j] >= e):
+                    i0 = j; break
+            if i0 is None:
+                i += 1; continue
+        r, fim = _gerir(h, l, c, i0, sgn, e, st, a1, a2)
+        if r is None:
+            break
+        rs.append(r)
+        i = fim + 1
+    if not rs:
+        return {"n": 0, "acerto": None, "exp_r": None}
+    return {"n": len(rs), "acerto": round(100 * sum(1 for r in rs if r > 0) / len(rs)), "exp_r": round(sum(rs) / len(rs), 2)}
+
+
 def analisar(ccy):
     inst = f"{ccy}-USDT-SWAP"
     tfs = {tf: tf_analysis(inst, tf, n) for tf, n in TFS.items()}
     d = derivativos(ccy, inst)
-    return {"timeframes": tfs, "derivativos": d, "setup": setup(tfs, d)}
+    st = setup(tfs, d)
+    plano = st if st.get("entrada") is not None else st.get("plano_condicional")
+    serie = tfs.get("4H") and tfs["4H"].get("_serie")
+    if plano and serie:
+        st["backtest"] = backtest(serie, plano["direcao"], "imediato" if st.get("entrada") is not None else "condicional")
+    for t in tfs.values():
+        if t: t.pop("_serie", None)
+    return {"timeframes": tfs, "derivativos": d, "setup": st}
+
+
+def qualidade(linha, bt):
+    """Nota de 0 a 100 da chance de a operação dar lucro (ver o topo do arquivo)."""
+    p = linha["plano"]
+    sgn = 1 if p["direcao"] == "LONG" else -1
+    n, exp, ac = bt.get("n") or 0, bt.get("exp_r"), bt.get("acerto")
+    peso = n / (n + 4)  # poucas operações no histórico valem menos
+    nota = 0.0
+    # 1) backtest: rendimento médio (35) e taxa de acerto (15)
+    if exp is not None:
+        nota += 35 * max(0.0, min(1.0, (exp * peso + 0.3) / 1.0))
+        nota += 15 * max(0.0, min(1.0, ((ac or 0) / 100 * peso + 0.5 * (1 - peso) - 0.3) / 0.4))
+    else:
+        nota += 35 * 0.3 + 15 * 0.3
+    # 2) confluência (20): pontuação e tempos gráficos a favor
+    nota += 12 * min(1.0, abs(linha["pontuacao"] or 0) / 7)
+    nota += 8 * sum(1 for k in ("t1d", "t4h", "t1h") if (linha.get(k) or 0) * sgn > 0) / 3
+    # 3) entrada não esticada (10): RSI 4H longe dos extremos na direção da operação
+    r4 = linha.get("rsi_4h") or 50
+    esticado = (r4 - 50) * sgn  # positivo = já andou a favor
+    nota += 10 * max(0.0, min(1.0, 1 - max(0.0, esticado - 10) / 20))
+    # 4) liquidez (10): de US$ 5 mi (0) a US$ 500 mi (1)
+    nota += 10 * max(0.0, min(1.0, (math.log10(max(linha["vol_usd_m"], 0.01)) - math.log10(5)) / 2))
+    # 5) posicionamento (10): multidão do outro lado
+    fr, ls = linha.get("funding"), linha.get("long_short")
+    pos = 0.5
+    if fr is not None:
+        pos += 0.25 if fr * sgn < 0 else (-0.25 if fr * sgn > 0.02 else 0)
+    if ls is not None:
+        pos += 0.25 if (sgn > 0 and ls < 1) or (sgn < 0 and ls > 2) else (-0.25 if (sgn > 0 and ls > 3) or (sgn < 0 and ls < 0.8) else 0)
+    nota += 10 * max(0.0, min(1.0, pos))
+    # imediato com tudo alinhado vale um pouco mais que esperar gatilho
+    if p["tipo"] == "imediato":
+        nota += 3
+    return int(round(max(0, min(100, nota))))
 
 
 def universo(min_vol):
@@ -240,6 +355,7 @@ def linha_radar(base, a):
         "ema200_1d": d1 and d1["ema200"], "suporte": h4 and (h4["suportes"] or [None])[0], "resistencia": h4 and (h4["resistencias"] or [None])[0],
         "funding": d.get("funding_8h_pct"), "oi_7d": d.get("oi_var_7d_pct"), "long_short": d.get("long_short_contas"),
         "pontuacao": st.get("pontuacao"), "setup": st.get("direcao"), "motivos": st.get("motivos", []), "plano": plano,
+        "bt": st.get("backtest"), "qualidade": None, "top10": None,
     })
 
 
@@ -275,20 +391,35 @@ def main():
             falhas.append(base["ativo"]); continue
         completo["ativos"][base["ativo"]] = dict(a, ticker=base)
         linhas.append(linha_radar(base, a))
+    # nota de qualidade e top 10
+    elegiveis = []
+    for ln in linhas:
+        if not ln["plano"]:
+            continue
+        ln["qualidade"] = qualidade(ln, ln["bt"] or {})
+        bt = ln["bt"] or {}
+        negativo = (bt.get("n") or 0) >= 3 and (bt.get("exp_r") or 0) <= 0
+        if ln["vol_usd_m"] >= 5 and not negativo:
+            elegiveis.append(ln)
+    elegiveis.sort(key=lambda x: (-x["qualidade"], -x["vol_usd_m"]))
+    for k, ln in enumerate(elegiveis[:10], 1):
+        ln["top10"] = k
     if args.saida:
         json.dump(completo, open(args.saida, "w"), ensure_ascii=False)
     if args.scanner:
         doc = {"at": agora, "min_vol_usd": args.min_vol, "total": len(linhas), "falhas": falhas,
                "moedas_json": json.dumps(linhas, ensure_ascii=False, separators=(",", ":"))}
         json.dump(doc, open(args.scanner, "w"), ensure_ascii=False)
-    # candidatos: moedas com setup (imediato ou condicional), mais fortes primeiro
     cand = [l for l in linhas if l["plano"]]
-    cand.sort(key=lambda l: (-(l["plano"]["tipo"] == "imediato"), -abs(l["pontuacao"] or 0), -l["vol_usd_m"]))
+    top = elegiveis[:10]
     resumo = {
         "gerado_em": agora, "moedas_analisadas": len(linhas), "falhas": falhas, "min_vol_usd": args.min_vol,
         "com_setup": len(cand), "vies_alta": sum(1 for l in linhas if (l["pontuacao"] or 0) >= 3),
         "vies_baixa": sum(1 for l in linhas if (l["pontuacao"] or 0) <= -3),
-        "candidatos": [dict(l, detalhe=completo["ativos"][l["ativo"]]) for l in cand[:args.top]],
+        "regra_top10": "nota de qualidade 0-100 (backtest 4H do mesmo plano na moeda, confluência, RSI, liquidez, posicionamento); só moedas com plano, volume >= US$ 5 mi e sem backtest negativo",
+        "top10": [dict(l, detalhe=completo["ativos"][l["ativo"]]) for l in top],
+        "fora_do_top10": [{"ativo": l["ativo"], "qualidade": l["qualidade"], "plano": l["plano"]["direcao"] + " " + l["plano"]["tipo"], "bt": l["bt"]}
+                          for l in sorted(cand, key=lambda x: -(x["qualidade"] or 0)) if not l["top10"]][:args.top],
     }
     json.dump(resumo, sys.stdout, ensure_ascii=False, indent=1)
 

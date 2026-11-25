@@ -1,6 +1,6 @@
 # Radar Cripto & Negócios
 
-Uma equipe de agentes de IA (Claude), com uma mesa de decisão para os sinais de futuros, que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos e as novas ideias de negócio pelo mundo, grava tudo num painel e envia um relatório por e-mail e push.
+Uma equipe de 3 agentes de IA (Claude) que roda sozinha **a cada 4 horas**, 24h por dia. Ela analisa o mercado de criptoativos e todas as moedas com futuros na OKX, publica sinais só entre as 10 melhores oportunidades, acompanha uma **carteira fictícia de US$ 2.000** que segue esses sinais e procura oportunidades de renda digital. Grava tudo num painel e envia um relatório por e-mail e push.
 
 > Isto é análise automatizada, **não é recomendação de investimento**. Futuros com alavancagem podem zerar a margem.
 
@@ -8,27 +8,50 @@ Uma equipe de agentes de IA (Claude), com uma mesa de decisão para os sinais de
 
 | Agente | O que faz |
 |---|---|
-| Analista de mercado cripto | Preços, variações, fluxo dos ETFs, liquidações, moedas fora do normal, agenda macro |
-| Caçador de negócios | Rodadas de investimento e tendências (IA, DeFi, tokenização, pagamentos, stablecoins) e como fazer no Brasil |
-| Analista técnico de futuros | Análise gráfica em 3 tempos (1D, 4H, 1H) com EMAs 20/50/200, RSI, MACD, ATR, Bollinger, suportes e resistências, funding, open interest e long/short. Publica sinais LONG/SHORT, condicionais ou AGUARDAR, com entrada, stop, alvos, R:R e alavancagem máxima |
-| Gestor de risco / cético | Revisa os outros três, pode vetar sinais, dá nota de risco às ideias e define o nível: calmo, atenção ou alerta |
+| Analista de mercado cripto | Preços, variações, fluxo dos ETFs, liquidações, moedas fora do normal e agenda macro. Também aponta os riscos do momento e define o nível: calmo, atenção ou alerta |
+| Analista técnico de futuros | Decide sozinho os sinais, escolhendo só entre as moedas do **Top 10** do radar. Análise gráfica em 3 tempos (1D, 4H, 1H) com EMAs 20/50/200, RSI, MACD, ATR, suportes e resistências, funding, open interest e long/short. Publica LONG/SHORT, condicionais ou AGUARDAR, com entrada, stop, alvos, R:R e alavancagem máxima |
+| Caçador de renda digital | Novas oportunidades de renda na internet que dá para começar a partir do Brasil, com custo, prazo, primeiros passos e a nota de risco dele |
 
 ## Como uma rodada funciona
 
 1. **Memória:** lê as rodadas anteriores no painel, para comparar o que mudou e não repetir ideias.
 2. **Dados:** CoinGecko (preços, dominância), alternative.me (Medo e Ganância), DeFiLlama (TVL) e OKX (candles e derivativos dos perpétuos).
-3. **Gráficos:** roda [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py).
+3. **Radar e Top 10:** roda [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py) em todas as moedas e separa as 10 melhores oportunidades (veja abaixo).
 4. **Conferência:** roda [`scripts/avaliar_sinais.py`](scripts/avaliar_sinais.py), que confere cada sinal anterior contra os candles de 1h e grava a situação e o resultado.
-5. **Notícias:** só de fontes fortes. Cripto: CoinDesk, The Block, Decrypt, Bloomberg, CNBC, SEC, Farside. Startups: TechCrunch, Crunchbase News, Bloomberg, The Information. Brasil: Valor, InfoMoney, Banco Central, gov.br, NeoFeed, Brazil Journal. Cada notícia vai com a fonte e a data.
-6. **Grava** no painel e **envia o relatório** por e-mail e push.
+5. **Carteira fictícia:** roda [`scripts/carteira.py`](scripts/carteira.py), que aplica todos os sinais numa conta de US$ 2.000 e grava o saldo.
+6. **Notícias:** só de fontes fortes. Cripto: CoinDesk, The Block, Decrypt, Bloomberg, CNBC, SEC, Farside. Brasil: Valor, InfoMoney, Banco Central, gov.br, NeoFeed, Brazil Journal. Renda digital: TechCrunch, The Verge, Reuters, Bloomberg, Exame, Sebrae e os blogs oficiais das plataformas. Cada notícia vai com a fonte e a data.
+7. **Grava** no painel e **envia o relatório** por e-mail e push, com o saldo da carteira no assunto.
 
 O passo a passo completo que cada rodada segue está em [`agentes/rodada.md`](agentes/rodada.md).
 
-## Mesa de decisão
+## Top 10: as melhores oportunidades
 
-Antes de qualquer sinal LONG ou SHORT ser publicado, ele passa por uma **mesa de decisão**: uma revisão final que aplica os princípios que grandes traders de futuros ensinam publicamente (Paul Tudor Jones, Stanley Druckenmiller, Peter Brandt, Linda Raschke, Ed Seykota e os Turtles, Mark Douglas). A mesa confere vetos automáticos, dá uma nota de 0 a 10 e só aprova sinais com nota 7 ou mais e nenhum veto. Os sinais vetados aparecem como "AGUARDAR", com o motivo. As regras completas estão em [`agentes/mesa_de_decisao.md`](agentes/mesa_de_decisao.md). Para mudar as regras, edite esse arquivo: a rodada seguinte já lê a versão nova.
+Toda moeda com plano (imediato ou condicional) ganha uma **nota de qualidade de 0 a 100**, que estima a chance de a operação dar lucro:
 
-A mesa usa os princípios como disciplina. Ela não fala em nome dessas pessoas e não garante os resultados que elas tiveram.
+| Parte | Peso | O que mede |
+|---|---|---|
+| Backtest | 50 | O mesmo plano testado nos candles 4H da própria moeda (~50 dias): rendimento médio em R (35) e % de operações com lucro (15). Com poucas operações no histórico, o peso cai. |
+| Confluência | 20 | Pontuação do setup e quantos tempos gráficos (1D, 4H, 1H) apontam para o mesmo lado |
+| Entrada | 10 | RSI do 4H: entrar depois que o preço já esticou perde pontos |
+| Liquidez | 10 | De US$ 5 milhões (0) a US$ 500 milhões (cheio) negociados por dia |
+| Posicionamento | 10 | Funding e contas long/short com a multidão do outro lado |
+
+As 10 maiores notas, com mais de US$ 5 milhões por dia e sem backtest negativo, formam o **Top 10**. O analista técnico só publica sinais entre elas, de 0 a 4 por rodada.
+
+O backtest usa o regime atual da moeda e janela curta, então tende a ser otimista: serve para ordenar as moedas, não para prometer a taxa de acerto. O resultado real fica no placar e na carteira.
+
+A antiga mesa de decisão (regras em [`agentes/mesa_de_decisao.md`](agentes/mesa_de_decisao.md)) não é mais usada. Os sinais de 23 e 24/11 ainda mostram o parecer dela.
+
+## Carteira fictícia de US$ 2.000
+
+[`scripts/carteira.py`](scripts/carteira.py) aplica todos os sinais LONG/SHORT numa conta de mentira que começou com US$ 2.000, a partir do primeiro sinal (17/11):
+
+- Cada operação arrisca **1% do saldo** do momento em que foi acionada. Resultado = valor arriscado × resultado em R.
+- Tamanho da posição = valor arriscado ÷ distância até o stop, limitado a 5x o saldo.
+- **Taxas** de 0,05% do tamanho da posição na entrada e na saída.
+- Sinais que expiraram sem acionar não entram. Operações abertas aparecem com o resultado flutuante, mas só mudam o saldo quando encerram.
+
+O painel mostra o saldo, o resultado, a taxa de acerto, a maior queda, a curva do saldo e o extrato. É simulação: não cobra derrapagem de preço nem funding.
 
 ## Regras do analista técnico
 
@@ -37,6 +60,7 @@ A mesa usa os princípios como disciplina. Ela não fala em nome dessas pessoas 
 - Stop sempre definido (1,5 × ATR do 4H, ou além do suporte/resistência mais próximo). Alvos de 1,5R e 3R.
 - Alavancagem máxima calculada para perder no máximo cerca de 2% da margem se o stop for atingido, limitada a 5x.
 - Sem confluência, a resposta é **AGUARDAR**.
+- Só sinaliza moedas do Top 10, e cita na tese a posição, a nota e o backtest.
 - A cada rodada, confere se os sinais anteriores bateram no alvo, no stop ou se o gatilho não aconteceu (veja abaixo).
 
 ## Histórico e placar dos sinais
@@ -70,7 +94,7 @@ Radar de todas as criptos com perpétuo USDT na OKX e mais de US$ 1 milhão nego
 python3 scripts/analise_tecnica.py --todas --saida ta.json --scanner scanner.json > resumo.json
 ```
 
-`resumo.json` traz as moedas com setup, das mais fortes para as mais fracas; `scanner.json` é a tabela que o painel mostra na aba Radar.
+`resumo.json` traz o Top 10 (com a nota de qualidade, o backtest e o detalhe de cada moeda) e as melhores de fora do Top 10; `scanner.json` é a tabela que o painel mostra na aba Radar.
 
 Para conferir sinais, salve-os numa lista JSON (campos `id`, `at`, `ativo`, `direcao`, `tipo`, `entrada`, `stop`, `alvo1`, `alvo2`) e rode:
 
@@ -78,16 +102,25 @@ Para conferir sinais, salve-os numa lista JSON (campos `id`, `at`, `ativo`, `dir
 python3 scripts/avaliar_sinais.py sinais.json
 ```
 
+Para a carteira, junte o resultado da conferência a cada sinal (campos `status`, `resultado_r`, `r_flutuante`, `acionado_em`, `encerrado_em`) e rode:
+
+```bash
+python3 scripts/carteira.py sinais_conferidos.json --inicial 2000 --risco 1 --taxa 0.05
+```
+
 Usa só a biblioteca padrão do Python 3 e dados públicos da OKX (sem chave de API). A saída é JSON com os indicadores por tempo gráfico, os derivativos e o setup sugerido.
 
 ## Painel
 
-[`painel/index.html`](painel/index.html) é a página do painel. Ela roda dentro de um Artifact do claude.ai e lê os dados de quatro coleções:
+[`painel/index.html`](painel/index.html) é a página do painel. Ela roda dentro de um Artifact do claude.ai e lê os dados destas coleções:
 
 - `data/radar/briefings`: um relatório por rodada
 - `data/radar/sinais`: sinais de mercado
-- `data/radar/ideias`: banco de ideias de negócio
 - `data/radar/futuros`: sinais de futuros, com `status`, `resultado_r`, `acionado_em` e `encerrado_em` preenchidos pela conferência
+- `data/radar/renda`: oportunidades de renda digital
+- `data/radar/scanner/atual`: a tabela do radar, com a nota de qualidade e o Top 10
+- `data/radar/carteira/atual`: a carteira fictícia (saldo, curva, extrato e operações abertas)
+- `data/radar/ideias`: o antigo banco de ideias de negócio (só histórico)
 
 ## Limitações honestas
 
