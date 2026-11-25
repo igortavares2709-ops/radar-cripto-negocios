@@ -67,18 +67,25 @@ def precos_atuais() -> Dict[str, float]:
 COINGECKO_MARKETS = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&include_tokens=top&symbols="
 
 
-def ids_coingecko(simbolos: List[str]) -> Dict[str, str]:
+def ids_coingecko(simbolos: List[str], tentativas: int = 3, espera: float = 4.0) -> Dict[str, str]:
     """Código do CoinGecko de cada símbolo (ex.: VVV -> venice-token), para o painel buscar o preço
-    ao vivo. Quando um símbolo tem várias moedas, vale a de maior valor de mercado. {} se a API falhar."""
+    ao vivo. Quando um símbolo tem várias moedas, vale a de maior valor de mercado. A API gratuita
+    recusa pedidos em excesso (HTTP 429), então tenta de novo com espera. {} se não conseguir."""
     simbolos = sorted({s.lower() for s in simbolos if s})
     if not simbolos:
         return {}
-    try:
-        url = COINGECKO_MARKETS + urllib.parse.quote(",".join(simbolos))
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 radar-cripto/1.0", "Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            moedas = json.load(r)
-    except Exception:
+    url = COINGECKO_MARKETS + urllib.parse.quote(",".join(simbolos))
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 radar-cripto/1.0", "Accept": "application/json"})
+    moedas = None
+    for i in range(tentativas):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                moedas = json.load(r)
+            break
+        except Exception:
+            if i + 1 < tentativas:
+                time.sleep(espera * (i + 1))
+    if moedas is None:
         return {}
     melhor: Dict[str, dict] = {}
     for m in moedas if isinstance(moedas, list) else []:
@@ -195,9 +202,20 @@ def monitorar(sinais: List[dict], anterior: dict, agora_ms: Optional[int] = None
             if pos:
                 posicoes.append(pos)
     posicoes.sort(key=lambda x: (x["status"] == "aguardando", str(x.get("at"))))
-    cg = ids_coingecko([str(p.get("ativo", "")) for p in posicoes])
+    # códigos do CoinGecko: reaproveita os já achados em execuções anteriores e só busca os novos
+    conhecidos = dict(anterior.get("cg_ids") or {}) if isinstance(anterior.get("cg_ids"), dict) else {}
+    try:
+        for p in json.loads(anterior.get("posicoes_json") or "[]"):
+            if isinstance(p, dict) and p.get("cg_id") and p.get("ativo"):
+                conhecidos.setdefault(str(p["ativo"]).upper(), p["cg_id"])
+    except ValueError:
+        pass
+    faltam = sorted({str(p.get("ativo", "")).upper() for p in posicoes} - set(conhecidos))
+    if faltam:
+        conhecidos.update(ids_coingecko(faltam))
+    sem_codigo = sorted({str(p.get("ativo", "")).upper() for p in posicoes} - set(conhecidos))
     for p in posicoes:
-        p["cg_id"] = cg.get(str(p.get("ativo", "")).upper())
+        p["cg_id"] = conhecidos.get(str(p.get("ativo", "")).upper())
     agora = iso(agora_ms)
     novos = eventos(sinais, depois, extrato, agora)
     try:
@@ -212,8 +230,10 @@ def monitorar(sinais: List[dict], anterior: dict, agora_ms: Optional[int] = None
         "aguardando": sum(1 for p in posicoes if p["status"] == "aguardando"),
         "precos_de": "OKX, último negócio", "novos_eventos": len(novos),
         "posicoes_json": json_compacto(posicoes), "eventos_json": json_compacto(historico),
+        # memória símbolo -> código do CoinGecko (só dos que existem; fica pequena)
+        "cg_ids": {k: v for k, v in sorted(conhecidos.items()) if v},
     }
-    return {"avaliacao": avaliacao, "carteira": cart, "ao_vivo": ao_vivo, "novos": novos}
+    return {"avaliacao": avaliacao, "carteira": cart, "ao_vivo": ao_vivo, "novos": novos, "sem_codigo": sem_codigo}
 
 
 def resumo_texto(r: dict) -> str:
@@ -225,6 +245,9 @@ def resumo_texto(r: dict) -> str:
         linhas.append(f"- {e['ativo']} {e['direcao']}: {e['texto']}{extra}")
     if not r["novos"]:
         linhas.append("Nenhuma mudança de situação.")
+    if r.get("sem_codigo"):
+        linhas.append("Aviso: sem código do CoinGecko para " + ", ".join(r["sem_codigo"])
+                      + " (a aba Ao vivo mostra o preço da conferência para essas moedas).")
     return "\n".join(linhas)
 
 

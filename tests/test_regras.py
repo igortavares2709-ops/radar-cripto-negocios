@@ -420,7 +420,7 @@ class TestMonitor(unittest.TestCase):
             mon.urllib.request.urlopen = orig
         mon.urllib.request.urlopen = lambda req, timeout=None: (_ for _ in ()).throw(OSError("sem rede"))
         try:
-            self.assertEqual(self.orig_cg(["BTC"]), {})
+            self.assertEqual(self.orig_cg(["BTC"], espera=0), {})
         finally:
             mon.urllib.request.urlopen = orig
 
@@ -429,6 +429,40 @@ class TestMonitor(unittest.TestCase):
         k = candles((130, 100, 101), (104, 98, 102), t0=T0)
         mfe, mae = mon.excursao(Plano(1, 100.0, 90.0, 115.0, 130.0), k, T0 + HORA, 102.0)
         self.assertEqual((mfe, mae), (0.4, -0.2))
+
+    def test_codigos_do_coingecko_vem_da_memoria_e_so_busca_os_novos(self):
+        pedidos = []
+        mon.ids_coingecko = lambda simbolos: pedidos.append(list(simbolos)) or {}
+        anterior = {"cg_ids": {"BTC": "bitcoin"}}
+        r = self.rodar([sinal(status="aberto")], 105.0, candles((106, 99, 105)), anterior)
+        self.assertEqual(pedidos, [])  # BTC já estava na memória
+        self.assertEqual(json.loads(r["ao_vivo"]["posicoes_json"])[0]["cg_id"], "bitcoin")
+        self.assertEqual(r["ao_vivo"]["cg_ids"], {"BTC": "bitcoin"})
+        r = self.rodar([sinal(status="aberto")], 105.0, candles((106, 99, 105)), {})
+        self.assertEqual(pedidos, [["BTC"]])
+        self.assertEqual(r["sem_codigo"], ["BTC"])
+        self.assertIn("sem código do CoinGecko para BTC", mon.resumo_texto(r))
+
+    def test_ids_coingecko_tenta_de_novo(self):
+        import io
+        chamadas = []
+
+        class R(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def falso(req, timeout=None):
+            chamadas.append(1)
+            if len(chamadas) < 3:
+                raise OSError("HTTP 429")
+            return R(json.dumps([{"symbol": "btc", "id": "bitcoin", "market_cap": 1}]).encode())
+        orig = mon.urllib.request.urlopen
+        mon.urllib.request.urlopen = falso
+        try:
+            self.assertEqual(self.orig_cg(["BTC"], espera=0), {"BTC": "bitcoin"})
+        finally:
+            mon.urllib.request.urlopen = orig
+        self.assertEqual(len(chamadas), 3)
 
     def test_aguardando_mostra_distancia_ate_a_entrada(self):
         s = sinal(tipo="condicional", entrada=95, stop=85, alvo1=110, alvo2=125, status="aguardando")
