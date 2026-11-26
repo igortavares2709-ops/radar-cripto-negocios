@@ -810,6 +810,18 @@ class TestExecutorBinance(unittest.TestCase):
         os.unlink(f.name)
         self.assertIsNone(ex.ler_gestao(None))
 
+    def test_foto_das_operacoes(self):
+        c = CorretoraFalsa()
+        s1 = sinal_ex()
+        s2 = sinal_ex(id="f20261125-1700-eth", ativo="ETH", tipo="condicional", status="aguardando", entrada=110, stop=120, alvo1=95, alvo2=80, direcao="SHORT")
+        rel = ex.executar([s1, s2], c, False, False, self.agora)
+        ops = {o["sinal"]: o for o in rel["operacoes"]}
+        a = ops["f20261125-1700-btc"]
+        self.assertEqual((a["situacao"], a["quantidade"], a["stop"], a["alvo1"], a["alvo2"]), ("posição aberta", 2.0, 90.0, 115.0, 130.0))
+        self.assertEqual(a["risco_usd"], 20.0)
+        b = ops["f20261125-1700-eth"]
+        self.assertEqual((b["situacao"], b["quantidade"], b["entrada"], b["pnl_aberto"]), ("entrada pendente", -2.0, 110.0, None))
+
     def test_quantidade_respeita_o_teto_da_corretora(self):
         c = CorretoraFalsa()
         c.max_qtd = 1.5

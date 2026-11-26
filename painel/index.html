@@ -499,6 +499,11 @@
     <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Execução no testnet da Binance</h3>
     <p class="rd-sub" data-draw="exec-sub" data-source="execucao_doc"></p>
     <div class="rd-placar" data-draw="exec-tiles" data-source="execucao_doc"></div>
+    <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Operações na Binance agora</h3>
+    <p class="rd-sub" data-draw="bn-sub" data-source="bn_ops_vivo bn_ops_conf"></p>
+    <div class="rd-placar" data-draw="bn-tiles" data-source="bn_ops_vivo bn_ops_conf"></div>
+    <ul class="rd-sinais" data-draw="bn-lista" data-source="bn_ops_vivo bn_ops_conf"></ul>
+    <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">O que o executor fez na última execução</h3>
     <ul class="rd-sinais" data-draw="exec-lista" data-source="execucao_doc"></ul>
     <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Últimos avisos</h3>
     <p class="rd-sub">Quando um trade é acionado, bate um alvo, bate o stop ou vence, aparece aqui e chega como aviso no celular.</p>
@@ -2066,7 +2071,8 @@ dash.calc('execucao_doc', {
     const lista = (k) => rdParse(d[k + '_json']);
     return [{at: d.at, simulacao: !!d.simulacao, pausado: !!d.pausado, aviso: d.aviso || '', saldo_usdt: d.saldo_usdt ?? null,
       posicoes: lista('posicoes').length, acoes: lista('acoes').length, ignorados: lista('ignorados').length, erros: lista('erros').length,
-      acoes_lista: lista('acoes'), ignorados_lista: lista('ignorados'), erros_lista: lista('erros'), posicoes_lista: lista('posicoes')}];
+      acoes_lista: lista('acoes'), ignorados_lista: lista('ignorados'), erros_lista: lista('erros'), posicoes_lista: lista('posicoes'),
+      tem_operacoes: typeof d.operacoes_json === 'string'}];
   },
 });
 const rdExec = () => { const r = dash.data('execucao_doc'); return r.status === 'ok' && Array.isArray(r.data) && r.data[0] ? r.data[0] : null; };
@@ -2092,7 +2098,7 @@ dash.draw('exec-lista', (el) => {
   const d = rdExec();
   if (!d) return;
   const linha = (rotulo, cls, texto, meta) => { const li = rdEl('li'); const box = rdEl('div'); box.append(rdEl('div', '', texto)); if (meta) box.append(rdEl('div', 'rd-chg', meta)); li.append(rdEl('b', cls, rotulo), box); el.append(li); };
-  d.posicoes_lista.forEach((p) => linha(p.simbolo, p.quantidade >= 0 ? 'rd-up' : 'rd-down', (p.quantidade >= 0 ? 'comprado ' : 'vendido ') + Math.abs(p.quantidade) + ' a ' + rdNum(p.entrada), 'resultado em aberto ' + rdFmt.usdS(p.pnl_aberto)));
+  if (!d.tem_operacoes) d.posicoes_lista.forEach((p) => linha(p.simbolo, p.quantidade >= 0 ? 'rd-up' : 'rd-down', (p.quantidade >= 0 ? 'comprado ' : 'vendido ') + Math.abs(p.quantidade) + ' a ' + rdNum(p.entrada), 'resultado em aberto ' + rdFmt.usdS(p.pnl_aberto)));
   d.acoes_lista.forEach((a) => {
     const o = a.ordem || {};
     const txt = a.cancelar ? 'cancelou ' + a.cancelar : [o.side === 'BUY' ? 'compra' : 'venda', o.type, o.quantity, o.price ? 'a ' + o.price : '', o.stopPrice ? 'disparo ' + o.stopPrice : ''].filter(Boolean).join(' ');
@@ -2101,6 +2107,101 @@ dash.draw('exec-lista', (el) => {
   d.ignorados_lista.forEach((i) => linha('pulado', 'rd-chg', i.motivo, i.sinal && i.sinal !== '-' ? 'sinal ' + i.sinal : ''));
   d.erros_lista.forEach((x) => linha('erro', 'rd-down', x, ''));
   if (!el.children.length) el.append(rdEl('li', 'rd-empty', 'Nada a fazer nesta execução.'));
+});
+
+// ---------- Operações na Binance (foto do executor + preço ao vivo) ----------
+// O executor grava, a cada execução, como cada operação está na conta de teste (posição, entrada, stop e
+// alvos vivos, resultado). Com a página aberta, o resultado é recalculado com o preço ao vivo do CoinGecko
+// a cada 30 s; sem ele, fica o da última foto. Duas versões, porque um cálculo que depende de um insumo
+// com falha falha junto.
+const rdBnBase = (e) => {
+  const d = Array.isArray(e) ? e[0] : e;
+  if (!d) return [];
+  return rdParse(d.operacoes_json).filter((o) => o && typeof o.entrada === 'number' && o.entrada > 0).map((o) => ({...o, foto_em: d.at}));
+};
+const rdBnContas = (o, preco, aoVivo) => {
+  const sgn = o.direcao === 'LONG' ? 1 : -1, arred = (v) => Math.round(v * 100) / 100;
+  const r = {...o, preco: preco, ao_vivo: aoVivo};
+  if (!(preco > 0)) return r;
+  if (o.situacao === 'entrada pendente') { r.dist_entrada_pct = arred(Math.abs(o.entrada - preco) / preco * 100); return r; }
+  r.pnl = aoVivo ? arred(o.quantidade * (preco - o.entrada)) : o.pnl_aberto;
+  if (typeof o.stop === 'number') r.dist_stop_pct = arred(sgn * (preco - o.stop) / preco * 100);
+  const alvo = o.alvo1_feito || typeof o.alvo1 !== 'number' ? o.alvo2 : o.alvo1;
+  if (typeof alvo === 'number') r.dist_alvo_pct = arred(sgn * (alvo - preco) / preco * 100);
+  return r;
+};
+dash.calc('bn_ops_conf', {
+  title: 'Operações na Binance (última foto)',
+  description: 'Cada operação na conta de teste da Binance como o executor viu na última execução: posição ou entrada pendente, preço de entrada, preço de marcação, resultado em aberto, stop e alvos armados.',
+  inputs: ['execucao'],
+  fn: (e) => rdBnBase(e).map((o) => rdBnContas(o, o.preco_marca, false)),
+});
+dash.calc('bn_ops_vivo', {
+  title: 'Operações na Binance pelo preço ao vivo',
+  description: 'As mesmas operações da conta de teste, com o resultado recalculado pelo preço ao vivo do CoinGecko: quantidade × (preço − entrada). Preço ao vivo mais de 25% longe do da Binance é descartado.',
+  inputs: ['execucao', 'ao_vivo_posicoes', 'precos_vivo'],
+  fn: (e, posicoes, precos) => {
+    const cg = new Map((posicoes || []).map((p) => [p.id, p.cg_id]));
+    const porId = new Map((precos || []).filter((c) => typeof c.preco === 'number').map((c) => [c.id, c.preco]));
+    return rdBnBase(e).map((o) => {
+      const vivo = porId.get(cg.get(o.sinal));
+      const ref = o.preco_marca || o.entrada;
+      if (typeof vivo === 'number' && vivo > 0 && !(ref > 0 && Math.abs(vivo / ref - 1) > 0.25)) return rdBnContas(o, vivo, true);
+      return rdBnContas(o, o.preco_marca, false);
+    });
+  },
+});
+const rdBn = () => {
+  const vivo = dash.data('bn_ops_vivo');
+  if (rdTemPrecoVivo() && vivo.status === 'ok' && Array.isArray(vivo.data)) return vivo.data;
+  const conf = dash.data('bn_ops_conf');
+  return conf.status === 'ok' && Array.isArray(conf.data) ? conf.data : null;
+};
+dash.draw('bn-sub', (el) => {
+  const ops = rdBn();
+  if (!ops) { el.textContent = 'Carregando as operações da Binance…'; return; }
+  if (!ops.length) { el.textContent = 'Nenhuma operação na conta de teste agora. O executor grava aqui como está cada uma a cada execução.'; return; }
+  const vivas = ops.filter((o) => o.ao_vivo).length;
+  el.textContent = 'Foto da conta de teste tirada pelo executor ' + rdFmt.when(ops[0].foto_em) + ' (posição, entrada, stop e alvos armados na Binance). ' +
+    (vivas ? 'Resultado e distâncias recalculados a cada 30 s pelo preço ao vivo do CoinGecko (' + vivas + ' de ' + ops.length + ' operações); o testnet tem preços próprios, então o valor exato na Binance pode diferir um pouco. ' : 'Sem preço ao vivo agora: valem os números da Binance na hora da foto. ') +
+    'Stop e alvos executam na própria Binance, a qualquer hora, mesmo com a página fechada.';
+});
+dash.draw('bn-tiles', (el) => {
+  el.replaceChildren();
+  const ops = rdBn();
+  if (!ops || !ops.length) return;
+  const abertas = ops.filter((o) => o.situacao === 'posição aberta'), pend = ops.length - abertas.length;
+  const pnl = abertas.reduce((s, o) => s + (typeof o.pnl === 'number' ? o.pnl : 0), 0);
+  const risco = ops.reduce((s, o) => s + (typeof o.risco_usd === 'number' ? o.risco_usd : 0), 0);
+  const vivo = abertas.some((o) => o.ao_vivo);
+  rdTiles(el, 'bn_ops_vivo', [
+    {lbl: 'Posições abertas', field: 'situacao', value: String(abertas.length), note: pend ? pend + ' entrada' + (pend > 1 ? 's' : '') + ' pendente' + (pend > 1 ? 's' : '') : 'nenhuma entrada pendente'},
+    {lbl: 'Resultado em aberto', field: 'pnl', value: rdFmt.usdS(Math.round(pnl * 100) / 100), note: vivo ? 'pelo preço ao vivo' : 'na hora da foto', cls: pnl > 0 ? 'rd-up' : pnl < 0 ? 'rd-down' : ''},
+    {lbl: 'Risco total até os stops', field: 'risco_usd', value: rdFmt.usd(Math.round(risco * 100) / 100), note: 'mesmo valor da carteira dos analistas'},
+  ]);
+});
+dash.draw('bn-lista', (el) => {
+  el.replaceChildren();
+  const ops = rdBn();
+  if (!ops) return;
+  const pct = (v) => v == null ? '—' : rdFmt.dec(v, 2) + '%';
+  const qtd = (v) => Math.abs(v).toLocaleString('pt-BR', {maximumFractionDigits: 8});
+  ops.slice().sort((a, b) => (a.situacao === b.situacao ? 0 : a.situacao === 'posição aberta' ? -1 : 1) || String(a.ativo).localeCompare(String(b.ativo))).forEach((o) => {
+    const li = rdEl('li'), box = rdEl('div');
+    const lado = o.direcao === 'LONG' ? 'comprado' : 'vendido';
+    const topo = o.situacao === 'posição aberta'
+      ? lado + ' ' + qtd(o.quantidade) + ' a ' + rdNum(o.entrada) + ' · agora ' + rdNum(o.preco) + (o.ao_vivo ? ' (ao vivo)' : '') + ' · resultado ' + rdFmt.usdS(o.pnl)
+      : 'entrada pendente: ' + (o.direcao === 'LONG' ? 'comprar ' : 'vender ') + qtd(o.quantidade) + ' a ' + rdNum(o.entrada) + ' · agora ' + rdNum(o.preco) + (o.ao_vivo ? ' (ao vivo)' : '') + ' · falta ' + pct(o.dist_entrada_pct);
+    const linha1 = rdEl('div', o.situacao === 'posição aberta' ? (o.pnl > 0 ? 'rd-up' : o.pnl < 0 ? 'rd-down' : '') : '', topo);
+    const partes = ['stop ' + (o.stop == null ? 'não encontrado' : rdNum(o.stop) + (o.stop_na_entrada ? ' (na entrada)' : '')),
+      'alvo 1 ' + (o.alvo1_feito ? 'executado' : o.alvo1 == null ? '—' : rdNum(o.alvo1)), 'alvo 2 ' + (o.alvo2 == null ? '—' : rdNum(o.alvo2)),
+      'risco ' + rdFmt.usd(o.risco_usd)];
+    if (o.situacao === 'posição aberta') partes.push('folga até o stop ' + pct(o.dist_stop_pct), 'falta para o alvo ' + pct(o.dist_alvo_pct));
+    box.append(linha1, rdEl('div', 'rd-chg', partes.join(' · ')));
+    li.append(rdEl('b', o.direcao === 'LONG' ? 'rd-up' : 'rd-down', o.ativo + ' ' + o.direcao), box);
+    el.append(li);
+  });
+  if (!el.children.length) el.append(rdEl('li', 'rd-empty', 'Nenhuma operação na conta de teste agora.'));
 });
 
 // ---------- Gráfico principal ----------

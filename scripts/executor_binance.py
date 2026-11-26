@@ -490,7 +490,64 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
                 break
             enviadas.append(o)
         ocupados.add(sim)
+    rel["operacoes"] = foto_das_operacoes(cli, sinais, regras)
     return rel
+
+
+def foto_das_operacoes(cli, sinais: List[dict], regras: Dict[str, dict]) -> List[dict]:
+    """Como cada operação está na corretora agora, depois do que esta execução fez (consulta nova, sem cache):
+    posição ou entrada pendente, preço de entrada, preço de marcação, resultado em aberto, stop e alvos vivos.
+    É o que o painel mostra na seção da Binance, recalculando o resultado com o preço ao vivo."""
+    try:
+        posicoes = cli.posicoes()
+    except BinanceErro:
+        return []
+    out = []
+    por_simbolo: Dict[str, List[dict]] = {}
+    for s in sinais:
+        if s.get("direcao") in ("LONG", "SHORT") and simbolo_de(s.get("ativo", "")) in regras:
+            por_simbolo.setdefault(simbolo_de(s["ativo"]), []).append(s)
+    for sim, lista in sorted(por_simbolo.items()):
+        try:
+            todas = cli.ordens(sim) + cli.ordens_algo(sim)
+        except BinanceErro:
+            continue
+        pos = posicoes.get(sim) or {}
+        qtd_pos = float(pos.get("positionAmt") or 0)
+        for s in lista:
+            ords = ordens_do_sinal(todas, s["id"])
+            e = ords.get("e")
+            vivas = {p: o for p, o in ords.items() if o.get("status") in ("NEW", "PARTIALLY_FILLED")}
+            if not e or not (vivas or (e.get("status") == "FILLED" and qtd_pos)):
+                continue
+
+            def disparo(*papeis):
+                for p in papeis:
+                    if p in vivas and vivas[p].get("triggerPrice"):
+                        return float(vivas[p]["triggerPrice"])
+                return None
+            pendente = e.get("status") in ("NEW", "PARTIALLY_FILLED") and float(e.get("executedQty") or 0) == 0
+            entrada = float(e.get("price") or 0) if pendente else float(pos.get("entryPrice") or e.get("avgPrice") or 0)
+            qtd = float(e.get("origQty") or e.get("quantity") or 0) * (1 if s["direcao"] == "LONG" else -1) if pendente else qtd_pos
+            stop = disparo("be", "r", "s")
+            marca = float(pos.get("markPrice") or 0) or None
+            if marca is None:
+                try:
+                    marca = cli.preco(sim)
+                except (BinanceErro, OSError, ValueError):
+                    pass
+            out.append({
+                "sinal": s["id"], "ativo": s.get("ativo"), "simbolo": sim, "direcao": s["direcao"],
+                "situacao": "entrada pendente" if pendente else "posição aberta",
+                "quantidade": qtd, "entrada": entrada,
+                "preco_marca": marca,
+                "pnl_aberto": None if pendente else round(float(pos.get("unRealizedProfit") or 0), 2),
+                "stop": stop, "alvo1": disparo("t1"), "alvo2": disparo("t2", "t3"),
+                "stop_na_entrada": "be" in vivas,
+                "alvo1_feito": ords.get("t1", {}).get("status") == "FILLED",
+                "risco_usd": round(abs(qtd) * abs(entrada - stop), 2) if stop and entrada else None,
+            })
+    return out
 
 
 class SemCorretora:
@@ -551,7 +608,7 @@ def main():
     if not (chave and segredo):
         rel["aviso"] = "sem BINANCE_TESTNET_API_KEY/SECRET: rodou em simulação"
     # campos de lista também como texto JSON, para o documento do painel
-    for k in ("acoes", "ignorados", "erros", "posicoes"):
+    for k in ("acoes", "ignorados", "erros", "posicoes", "operacoes"):
         rel[k + "_json"] = json.dumps(rel.get(k, []), ensure_ascii=False, separators=(",", ":"))
     json.dump(rel, sys.stdout, ensure_ascii=False, indent=1)
 
