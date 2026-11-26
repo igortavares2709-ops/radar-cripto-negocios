@@ -39,7 +39,7 @@ from typing import Dict, List, Optional
 
 from radar_comum import carregar_sinais, iso, ms, numero
 
-BASES_TESTNET = ("https://testnet.binancefuture.com", "https://demo-fapi.binance.com")
+BASES_TESTNET = ("https://testnet.binancefuture.com",)  # a Demo Trading (demo-fapi) também bloqueia estes servidores (HTTP 451)
 RISCO_PCT = 1.0
 ALAV_MAX = 5
 MAX_NOVAS_POR_EXECUCAO = 4
