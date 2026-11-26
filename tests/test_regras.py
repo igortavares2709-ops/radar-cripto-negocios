@@ -542,7 +542,6 @@ class CorretoraFalsa:
     def pnl_realizado_hoje(self): return self.pnl
     def posicoes(self): return {k: {"positionAmt": str(v), "entryPrice": "100", "unRealizedProfit": "0"} for k, v in self.pos.items() if v}
     def preco(self, s): return self.p
-    def ordens(self, s): return [o for o in self.ords if o["symbol"] == s]
     def alavancagem(self, s, x): self.lev[s] = x
 
     def enviar(self, o):
@@ -560,6 +559,22 @@ class CorretoraFalsa:
             if o["clientOrderId"] == c and o["status"] == "NEW":
                 o["status"] = "CANCELED"
         self.canceladas.append(c)
+
+    # ordens algo (stop e alvos): ficam na mesma lista, marcadas como algo
+    def enviar_algo(self, o):
+        self.t += 1
+        reg = dict(o, clientOrderId=o["clientAlgoId"], status="NEW", executedQty="0", updateTime=T0 + self.t, algo=True)
+        self.ords.append(reg)
+        return {"algoStatus": "NEW", "clientAlgoId": o["clientAlgoId"]}
+
+    def cancelar_algo(self, s, c):
+        self.cancelar(s, c)
+
+    def ordens(self, s):
+        return [o for o in self.ords if o["symbol"] == s and not o.get("algo")]
+
+    def ordens_algo(self, s):
+        return [o for o in self.ords if o["symbol"] == s and o.get("algo")]
 
     def por_papel(self, sid):
         return {p: o for p in ex.PAPEIS for o in self.ords if o["clientOrderId"] == ex.cid(sid, p)}
@@ -586,14 +601,18 @@ class TestExecutorBinance(unittest.TestCase):
         self.assertLessEqual(len(longo), 36)
         self.assertTrue(longo.startswith("rd-") and longo.endswith("-t1"))
 
-    def test_abre_imediato_com_stop_e_alvo2_e_tamanho_de_1pct(self):
+    def test_abre_imediato_com_stop_e_metade_em_cada_alvo(self):
         c = CorretoraFalsa(preco=100.0)
         rel = ex.executar([sinal_ex()], c, simular=False, pausado=False, agora_ms=self.agora)
         o = c.por_papel("f20261125-1700-btc")
         self.assertEqual(o["e"]["type"], "MARKET")
         self.assertEqual(o["e"]["quantity"], "2.000")          # US$ 20 de risco / 10 de distância
-        self.assertEqual((o["s"]["type"], o["s"]["stopPrice"]), ("STOP_MARKET", "90.0"))
-        self.assertEqual((o["t2"]["type"], o["t2"]["stopPrice"]), ("TAKE_PROFIT_MARKET", "130.0"))
+        # proteção pela API de ordens algo, "só reduzir" e com quantidade
+        self.assertEqual((o["s"]["type"], o["s"]["triggerPrice"], o["s"]["quantity"], o["s"]["reduceOnly"]), ("STOP_MARKET", "90.0", "2.000", "true"))
+        self.assertEqual((o["t1"]["type"], o["t1"]["triggerPrice"], o["t1"]["quantity"]), ("TAKE_PROFIT_MARKET", "115.0", "1.000"))
+        self.assertEqual((o["t2"]["type"], o["t2"]["triggerPrice"], o["t2"]["quantity"]), ("TAKE_PROFIT_MARKET", "130.0", "1.000"))
+        self.assertTrue(all(o[p].get("algo") for p in ("s", "t1", "t2")))
+        self.assertNotIn("closePosition", o["s"])
         self.assertEqual(c.lev["BTCUSDT"], 5)
         self.assertEqual(rel["erros"], [])
 
@@ -601,22 +620,49 @@ class TestExecutorBinance(unittest.TestCase):
         c = CorretoraFalsa()
         ex.executar([sinal_ex()], c, False, False, self.agora)
         n = len(c.ords)
-        ex.executar([sinal_ex()], c, False, False, self.agora)
-        # a segunda execução só acrescenta a saída de metade no alvo 1
-        self.assertEqual(len(c.ords), n + 1)
-        self.assertEqual(c.por_papel("f20261125-1700-btc")["t1"]["quantity"], "1.000")
+        rel = ex.executar([sinal_ex()], c, False, False, self.agora)
+        self.assertEqual(len(c.ords), n)
+        self.assertEqual(rel["acoes"], [])
 
     def test_alvo1_move_stop_para_a_entrada(self):
         c = CorretoraFalsa()
         ex.executar([sinal_ex()], c, False, False, self.agora)
-        ex.executar([sinal_ex()], c, False, False, self.agora)
-        t1 = c.por_papel("f20261125-1700-btc")["t1"]
-        t1["status"] = "FILLED"
+        c.por_papel("f20261125-1700-btc")["t1"]["status"] = "FILLED"
         c.pos["BTCUSDT"] = 1.0
         ex.executar([sinal_ex(status="alvo1 (aberto)")], c, False, False, self.agora)
         o = c.por_papel("f20261125-1700-btc")
         self.assertIn(ex.cid("f20261125-1700-btc", "s"), c.canceladas)
-        self.assertEqual((o["be"]["type"], o["be"]["stopPrice"]), ("STOP_MARKET", "100.0"))
+        self.assertEqual((o["be"]["type"], o["be"]["triggerPrice"], o["be"]["quantity"]), ("STOP_MARKET", "100.0", "1.000"))
+        n = len(c.ords)
+        ex.executar([sinal_ex(status="alvo1 (aberto)")], c, False, False, self.agora)
+        self.assertEqual(len(c.ords), n)  # não move de novo
+
+    def test_condicional_ja_sai_protegido(self):
+        c = CorretoraFalsa(preco=105.0)
+        s = sinal_ex(tipo="condicional", status="aguardando", entrada=100, stop=90)
+        ex.executar([s], c, False, False, self.agora)
+        o = c.por_papel(s["id"])
+        self.assertEqual({p for p in o}, {"e", "s", "t1", "t2"})
+        self.assertEqual(o["s"]["quantity"], o["e"]["quantity"])
+
+    def test_alvo2_que_morreu_antes_da_entrada_e_recolocado(self):
+        c = CorretoraFalsa(preco=105.0)
+        s = sinal_ex(tipo="condicional", status="aguardando", entrada=100, stop=90)
+        ex.executar([s], c, False, False, self.agora)
+        o = c.por_papel(s["id"])
+        o["t2"]["status"] = "EXPIRED"          # disparou sem posição
+        o["e"].update(status="FILLED", executedQty=o["e"]["quantity"], avgPrice="100")
+        c.pos["BTCUSDT"] = 2.0
+        ex.executar([s], c, False, False, self.agora)
+        o = c.por_papel(s["id"])
+        self.assertEqual((o["t3"]["triggerPrice"], o["t3"]["quantity"]), ("130.0", "1.000"))
+
+    def test_stop_que_sumiu_e_recolocado(self):
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        c.por_papel("f20261125-1700-btc")["s"]["status"] = "CANCELED"
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        self.assertEqual(c.por_papel("f20261125-1700-btc")["r"]["triggerPrice"], "90.0")
 
     def test_condicional_que_nao_executa_em_48h_e_cancelado(self):
         c = CorretoraFalsa(preco=105.0)
@@ -664,4 +710,4 @@ class TestExecutorBinance(unittest.TestCase):
         c = CorretoraFalsa()
         rel = ex.executar([sinal_ex()], c, simular=True, pausado=False, agora_ms=self.agora)
         self.assertEqual(c.ords, [])
-        self.assertEqual(len(rel["acoes"]), 3)
+        self.assertEqual(len(rel["acoes"]), 4)

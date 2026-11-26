@@ -11,13 +11,17 @@ testnet: https://testnet.binancefuture.com). Sem elas, roda em simulação.
 
 O que faz em cada execução:
 - Abre os sinais LONG/SHORT novos (publicados nas últimas 6 horas, ainda "aguardando" ou "aberto"):
-  entrada a mercado (imediato) ou limitada (condicional), já com o stop e o alvo 2 na corretora.
-  Tamanho: 1% do saldo de risco até o stop, como a carteira fictícia; alavancagem até a do sinal (máx. 5x).
-- Cuida dos que já abriu: coloca a saída de metade no alvo 1; quando ela executa, move o stop para a
-  entrada; recoloca o stop se ele sumiu; cancela a entrada condicional que não executou em 48h; fecha
-  pelo preço a operação com mais de 7 dias; limpa ordens que sobraram de uma posição já fechada.
-- Não guarda estado: cada ordem tem um código (clientOrderId) "rd-<id do sinal>-<papel>", e o que já
-  foi feito é lido da própria corretora. Rodar duas vezes não duplica nada.
+  entrada a mercado (imediato) ou limitada (condicional) e, junto, a proteção: stop da posição inteira,
+  metade no alvo 1 e metade no alvo 2. Tamanho: 1% do saldo de risco até o stop, como a carteira
+  fictícia; alavancagem até a do sinal (máx. 5x).
+- A Binance só aceita stop e alvo pela API de ordens algo (POST /fapi/v1/algoOrder, algoType
+  CONDITIONAL), e "fechar posição" só com posição aberta; por isso a proteção vai com quantidade e
+  "só reduzir" (reduceOnly), o que vale antes de a entrada condicional executar.
+- Cuida dos que já abriu: quando o alvo 1 executa, move o stop da metade restante para a entrada;
+  recoloca proteção que sumiu; cancela a entrada condicional que não executou em 48h; fecha pelo preço
+  a operação com mais de 7 dias; limpa ordens que sobraram de uma posição já fechada.
+- Não guarda estado: cada ordem tem um código "rd-<id do sinal>-<papel>" (clientOrderId ou
+  clientAlgoId), e o que já foi feito é lido da própria corretora. Rodar duas vezes não duplica nada.
 
 Travas: só aceita endereços do testnet; no máximo 4 trades novos por execução e 8 abertos ao mesmo
 tempo; não abre novos se a perda realizada do dia passar de 3% do saldo; --pausado só protege e
@@ -49,7 +53,11 @@ JANELA_NOVO_H = 6          # só abre sinais publicados há menos disso
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
 PREFIXO = "rd-"
-PAPEIS = ("e", "s", "t1", "t2", "be", "x")  # entrada, stop, alvo 1, alvo 2, stop na entrada, saída no prazo
+PAPEIS = ("e", "s", "t1", "t2", "be", "r", "t3", "x")  # entrada, stop, alvo 1, alvo 2, stop na entrada, stop recolocado, alvo 2 recolocado, saída no prazo
+ALGO = ("s", "t1", "t2", "be", "r", "t3")  # papéis que vão pela API de ordens algo
+# estados das ordens algo traduzidos para os das ordens comuns
+ESTADO_ALGO = {"NEW": "NEW", "TRIGGERED": "FILLED", "FINISHED": "FILLED", "CANCELED": "CANCELED",
+               "EXPIRED": "EXPIRED", "REJECTED": "REJECTED"}
 
 
 class BinanceErro(Exception):
@@ -132,6 +140,20 @@ class ClienteBinance:
     def cancelar(self, simbolo: str, client_id: str):
         return self._req("DELETE", "/fapi/v1/order", {"symbol": simbolo, "origClientOrderId": client_id}, assinado=True)
 
+    def enviar_algo(self, ordem: dict):
+        return self._req("POST", "/fapi/v1/algoOrder", dict(ordem, algoType="CONDITIONAL"), assinado=True)
+
+    def cancelar_algo(self, simbolo: str, client_algo_id: str):
+        return self._req("DELETE", "/fapi/v1/algoOrder", {"clientAlgoId": client_algo_id}, assinado=True)
+
+    def ordens_algo(self, simbolo: str) -> List[dict]:
+        """Ordens algo dos últimos 7 dias, no formato das comuns (clientOrderId, status, executedQty)."""
+        out = []
+        for o in self._req("GET", "/fapi/v1/allAlgoOrders", {"symbol": simbolo}, assinado=True):
+            out.append(dict(o, clientOrderId=o.get("clientAlgoId"), status=ESTADO_ALGO.get(o.get("algoStatus"), o.get("algoStatus")),
+                            type=o.get("orderType"), updateTime=o.get("updateTime") or o.get("createTime") or 0, algo=True))
+        return out
+
 
 # ---------------------------------------------------------------- regras puras (testáveis sem corretora)
 
@@ -203,18 +225,24 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
         entrada["type"] = "MARKET"
     else:
         entrada.update(type="LIMIT", timeInForce="GTC", price=arred_preco(e, r["tick"]))
-    protecao = [
-        {"symbol": sim, "side": contra, "type": "STOP_MARKET", "stopPrice": arred_preco(st, r["tick"]),
-         "closePosition": "true", "workingType": "MARK_PRICE", "newClientOrderId": cid(sid, "s")},
-        {"symbol": sim, "side": contra, "type": "TAKE_PROFIT_MARKET", "stopPrice": arred_preco(a2, r["tick"]),
-         "closePosition": "true", "workingType": "MARK_PRICE", "newClientOrderId": cid(sid, "t2")},
-    ]
+    metade = arred_qtd(float(q) / 2, r["step"])
+    if Decimal(metade) < Decimal(r["min_qtd"]):
+        metade = "0"
+    resto = str(Decimal(q) - Decimal(metade))
+
+    def prot(papel, tipo, preco_disparo, qtd):
+        return {"symbol": sim, "side": contra, "type": tipo, "triggerPrice": arred_preco(preco_disparo, r["tick"]),
+                "quantity": qtd, "reduceOnly": "true", "workingType": "MARK_PRICE", "clientAlgoId": cid(sid, papel)}
+    protecao = [prot("s", "STOP_MARKET", st, q)]
+    if metade != "0":
+        protecao.append(prot("t1", "TAKE_PROFIT_MARKET", a1, metade))
+    protecao.append(prot("t2", "TAKE_PROFIT_MARKET", a2, resto))
     return {"simbolo": sim, "alavancagem": alav, "quantidade": q, "risco_usd": round(risco_usd, 2),
             "ordens": [entrada] + protecao}
 
 
 def ordens_do_sinal(ordens: List[dict], sinal_id: str) -> Dict[str, dict]:
-    """As ordens deste sinal na corretora, por papel (a mais recente de cada)."""
+    """As ordens deste sinal na corretora (comuns e algo, já no mesmo formato), por papel (a mais recente)."""
     out = {}
     for o in sorted(ordens, key=lambda o: o.get("updateTime", 0)):
         for p in PAPEIS:
@@ -225,23 +253,32 @@ def ordens_do_sinal(ordens: List[dict], sinal_id: str) -> Dict[str, dict]:
 
 def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, agora_ms: int) -> List[dict]:
     """O que fazer com um sinal que já tem ordens. Devolve uma lista de ações
-    ({"cancelar": cid} ou {"enviar": ordem}, com "motivo")."""
+    ({"cancelar": cid, "algo": bool} ou {"enviar": ordem, "algo": bool}, com "motivo")."""
     sim, sid = simbolo_de(s["ativo"]), s["id"]
     e = ords.get("e")
     if not e:
         return []
     sgn = 1 if s["direcao"] == "LONG" else -1
     contra = "SELL" if sgn > 0 else "BUY"
-    vivas = [o for o in ords.values() if o.get("status") in ("NEW", "PARTIALLY_FILLED")]
+    vivas = {p: o for p, o in ords.items() if o.get("status") in ("NEW", "PARTIALLY_FILLED")}
 
-    def cancelar_todas(motivo, exceto=()):
-        return [{"cancelar": o["clientOrderId"], "simbolo": sim, "motivo": motivo} for o in vivas if o["clientOrderId"] not in exceto]
+    def cancelar(papeis, motivo):
+        return [{"cancelar": vivas[p]["clientOrderId"], "simbolo": sim, "algo": p in ALGO, "motivo": motivo} for p in papeis if p in vivas]
 
-    if e.get("status") in ("NEW", "PARTIALLY_FILLED") and float(e.get("executedQty", 0)) == 0:
+    def cancelar_todas(motivo):
+        return cancelar(list(vivas), motivo)
+
+    def prot(papel, tipo, preco, qtd, motivo):
+        return {"enviar": {"symbol": sim, "side": contra, "type": tipo, "triggerPrice": arred_preco(preco, r["tick"]),
+                           "quantity": qtd, "reduceOnly": "true", "workingType": "MARK_PRICE", "clientAlgoId": cid(sid, papel)},
+                "algo": True, "motivo": motivo}
+
+    executada = float(e.get("executedQty", 0))
+    if e.get("status") in ("NEW", "PARTIALLY_FILLED") and executada == 0:
         if agora_ms - ms(s["at"]) > GATILHO_MAX_H * 3600_000:
             return cancelar_todas("entrada condicional não executou em 48h")
         return []
-    if e.get("status") in ("CANCELED", "EXPIRED", "REJECTED") and float(e.get("executedQty", 0)) == 0:
+    if e.get("status") in ("CANCELED", "EXPIRED", "REJECTED") and executada == 0:
         return cancelar_todas("entrada cancelada")
     if not pos_qtd:
         return cancelar_todas("posição já encerrada: limpando ordens que sobraram")
@@ -251,32 +288,24 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
         acoes += cancelar_todas("prazo de 7 dias")
         acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "MARKET", "reduceOnly": "true",
                                  "quantity": arred_qtd(abs(pos_qtd), r["step"]), "newClientOrderId": cid(sid, "x")},
-                      "motivo": "prazo de 7 dias: saída pelo preço"})
+                      "algo": False, "motivo": "prazo de 7 dias: saída pelo preço"})
         return acoes
-    t1 = ords.get("t1")
-    if t1 and t1.get("status") == "FILLED":
-        be = ords.get("be")
-        if not be or be.get("status") not in ("NEW", "FILLED"):
-            if ords.get("s", {}).get("status") == "NEW":
-                acoes.append({"cancelar": cid(sid, "s"), "simbolo": sim, "motivo": "alvo 1 executou: stop vai para a entrada"})
-            preco_medio = float(e.get("avgPrice") or numero(s["entrada"]))
-            acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "STOP_MARKET", "closePosition": "true",
-                                     "stopPrice": arred_preco(preco_medio, r["tick"]), "workingType": "MARK_PRICE",
-                                     "newClientOrderId": cid(sid, "be")},
-                          "motivo": "stop na entrada depois do alvo 1"})
-        return acoes
-    if not ords.get("s") or ords["s"].get("status") not in ("NEW", "FILLED"):
-        acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "STOP_MARKET", "closePosition": "true",
-                                 "stopPrice": arred_preco(numero(s["stop"]), r["tick"]), "workingType": "MARK_PRICE",
-                                 "newClientOrderId": cid(sid, "s") if not ords.get("s") else cid(sid, "be")},
-                      "motivo": "posição sem stop: recolocando"})
-    if not t1:
-        metade = arred_qtd(abs(pos_qtd) / 2, r["step"])
-        if Decimal(metade) >= Decimal(r["min_qtd"]):
-            acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "TAKE_PROFIT_MARKET", "reduceOnly": "true",
-                                     "quantity": metade, "stopPrice": arred_preco(numero(s["alvo1"]), r["tick"]),
-                                     "workingType": "MARK_PRICE", "newClientOrderId": cid(sid, "t1")},
-                          "motivo": "metade da posição no alvo 1"})
+    resto = arred_qtd(abs(pos_qtd), r["step"])
+    preco_medio = float(e.get("avgPrice") or 0) or numero(s["entrada"])
+    t1_feito = ords.get("t1", {}).get("status") == "FILLED"
+    tem_stop_vivo = any(p in vivas for p in ("s", "be", "r"))
+    if t1_feito and "be" not in ords:
+        acoes += cancelar(["s", "r"], "alvo 1 executou: stop vai para a entrada")
+        acoes.append(prot("be", "STOP_MARKET", preco_medio, resto, "stop da metade restante na entrada"))
+        tem_stop_vivo = True
+    if not tem_stop_vivo and "r" not in ords:
+        acoes.append(prot("r", "STOP_MARKET", preco_medio if t1_feito else numero(s["stop"]), resto, "posição sem stop: recolocando"))
+    alvo2_vivo_ou_feito = any(ords.get(p, {}).get("status") in ("NEW", "PARTIALLY_FILLED", "FILLED") for p in ("t2", "t3"))
+    if not alvo2_vivo_ou_feito and "t3" not in ords:
+        # o alvo 2 pode ter disparado antes de a entrada executar e ficado sem efeito: recoloca com o que sobrou
+        qtd = resto if t1_feito or "t1" not in vivas else arred_qtd(float(Decimal(resto) - Decimal(str(vivas["t1"].get("quantity") or "0"))), r["step"])
+        if Decimal(qtd) >= Decimal(r["min_qtd"]):
+            acoes.append(prot("t3", "TAKE_PROFIT_MARKET", numero(s["alvo2"]), qtd, "alvo 2 recolocado"))
     return acoes
 
 
@@ -291,12 +320,15 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
         reg = {"sinal": sinal_id, **{k: v for k, v in acao.items() if k != "enviar"}}
         if "enviar" in acao:
             o = acao["enviar"]
-            reg["ordem"] = {k: o[k] for k in ("symbol", "side", "type", "quantity", "price", "stopPrice", "newClientOrderId") if k in o}
+            reg["ordem"] = {k: o[k] for k in ("symbol", "side", "type", "quantity", "price", "triggerPrice", "newClientOrderId", "clientAlgoId") if k in o}
         if not simular:
             try:
                 if "enviar" in acao:
-                    resp = cli.enviar(acao["enviar"])
-                    reg["status"] = resp.get("status")
+                    resp = cli.enviar_algo(acao["enviar"]) if acao.get("algo") else cli.enviar(acao["enviar"])
+                    reg["status"] = resp.get("algoStatus") or resp.get("status")
+                elif acao.get("algo"):
+                    cli.cancelar_algo(acao["simbolo"], acao["cancelar"])
+                    reg["status"] = "CANCELED"
                 else:
                     cli.cancelar(acao["simbolo"], acao["cancelar"])
                     reg["status"] = "CANCELED"
@@ -319,7 +351,7 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
 
     def ordens_de(sim):
         if sim not in ordens_cache:
-            ordens_cache[sim] = cli.ordens(sim)
+            ordens_cache[sim] = cli.ordens(sim) + cli.ordens_algo(sim)
         return ordens_cache[sim]
 
     # 1) administrar o que já foi aberto (sinais com ordens nossas)
@@ -382,7 +414,7 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
                 continue
         for i, o in enumerate(plano["ordens"]):
             risco_txt = f"{plano['risco_usd']:.2f}".replace(".", ",")
-            fazer({"enviar": o, "motivo": ("abertura" if i == 0 else "proteção") + f" (risco US$ {risco_txt}, {plano['alavancagem']}x)"}, s["id"])
+            fazer({"enviar": o, "algo": i > 0, "motivo": ("abertura" if i == 0 else "proteção") + f" (risco US$ {risco_txt}, {plano['alavancagem']}x)"}, s["id"])
             if i == 0 and rel["acoes"][-1].get("erro"):
                 break  # entrada recusada: não manda a proteção
         ocupados.add(sim)
@@ -404,6 +436,7 @@ class SemCorretora:
     def pnl_realizado_hoje(self): return 0.0
     def posicoes(self): return {}
     def ordens(self, simbolo): return []
+    def ordens_algo(self, simbolo): return []
     def preco(self, simbolo): return self.pub.preco(simbolo)
 
 

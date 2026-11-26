@@ -69,8 +69,8 @@ No painel, a aba **Sinais abertos** mostra um resumo (resultado em aberto, saldo
 
 [`scripts/executor_binance.py`](scripts/executor_binance.py) replica os sinais numa **conta de teste** da Binance Futures, junto com o monitor (a cada 2 horas). Os servidores dos agentes não conseguem operar na Binance real (ela responde "localização restrita", HTTP 451), e o executor recusa qualquer endereço que não seja do testnet.
 
-- Abre os sinais LONG/SHORT publicados nas últimas 6 horas: entrada a mercado (imediato) ou limitada (condicional), com o stop e o alvo 2 já na corretora, 1% do saldo de risco e alavancagem até a do sinal (máx. 5x).
-- Administra os abertos: metade sai no alvo 1 e o stop vai para a entrada; recoloca um stop que sumiu; cancela a entrada condicional que não executou em 48h; fecha pelo preço depois de 7 dias.
+- Abre os sinais LONG/SHORT publicados nas últimas 6 horas: entrada a mercado (imediato) ou limitada (condicional) e, junto, o stop da posição inteira, metade no alvo 1 e metade no alvo 2 (pela API de ordens algo da Binance, "só reduzir", o que vale até antes de a entrada condicional executar), 1% do saldo de risco e alavancagem até a do sinal (máx. 5x).
+- Administra os abertos: quando o alvo 1 executa, o stop da metade restante vai para a entrada; recoloca stop ou alvo que sumiu; cancela a entrada condicional que não executou em 48h; fecha pelo preço depois de 7 dias.
 - Não guarda estado: cada ordem tem o código `rd-<id do sinal>-<papel>` e o que já foi feito é lido da corretora.
 - Travas: até 4 trades novos por execução e 8 abertos; não abre novos se a perda do dia passar de 3%; `--pausado` só administra; `--simular` só mostra o plano.
 - Chaves: variáveis de ambiente `BINANCE_TESTNET_API_KEY` e `BINANCE_TESTNET_API_SECRET` (conta em testnet.binancefuture.com). Sem elas, roda em simulação. **Nunca use ali chaves da conta real.**
