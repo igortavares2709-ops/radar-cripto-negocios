@@ -65,6 +65,17 @@ O documento da carteira também guarda o **placar completo** de todos os sinais,
 
 No painel, a aba **Sinais abertos** mostra um resumo (resultado em aberto, saldo contando as abertas, quantos estão no lucro, o mais perto do stop e do alvo) e esses cartões, do mais perto do stop ao mais longe, com a régua de preço (stop, entrada, alvos e o preço agora) e os últimos avisos. Com a página aberta, o preço vem **ao vivo do conector CoinGecko** e se atualiza sozinho a cada 30 segundos: o resultado em R e em US$, as distâncias até o stop e o alvo e o melhor e o pior momento são refeitos na hora, com as mesmas contas do monitor. O monitor grava o código do CoinGecko de cada moeda (`cg_id`, achado pela API pública pelo símbolo, ficando com a de maior valor de mercado). O preço do CoinGecko é a média do mercado à vista e pode diferir um pouco do perpétuo da OKX; quem decide oficialmente se bateu o stop ou o alvo é a conferência do monitor, pelo preço da OKX. Sem o conector, a aba mostra o preço da última conferência. A Visão geral também lista os sinais abertos, com uma barra de onde o preço está entre o stop e o alvo.
 
+## Execução no testnet da Binance (dinheiro de mentira)
+
+[`scripts/executor_binance.py`](scripts/executor_binance.py) replica os sinais numa **conta de teste** da Binance Futures, junto com o monitor (a cada 2 horas). Os servidores dos agentes não conseguem operar na Binance real (ela responde "localização restrita", HTTP 451), e o executor recusa qualquer endereço que não seja do testnet.
+
+- Abre os sinais LONG/SHORT publicados nas últimas 6 horas: entrada a mercado (imediato) ou limitada (condicional), com o stop e o alvo 2 já na corretora, 1% do saldo de risco e alavancagem até a do sinal (máx. 5x).
+- Administra os abertos: metade sai no alvo 1 e o stop vai para a entrada; recoloca um stop que sumiu; cancela a entrada condicional que não executou em 48h; fecha pelo preço depois de 7 dias.
+- Não guarda estado: cada ordem tem o código `rd-<id do sinal>-<papel>` e o que já foi feito é lido da corretora.
+- Travas: até 4 trades novos por execução e 8 abertos; não abre novos se a perda do dia passar de 3%; `--pausado` só administra; `--simular` só mostra o plano.
+- Chaves: variáveis de ambiente `BINANCE_TESTNET_API_KEY` e `BINANCE_TESTNET_API_SECRET` (conta em testnet.binancefuture.com). Sem elas, roda em simulação. **Nunca use ali chaves da conta real.**
+- O testnet tem preços próprios, que podem se afastar do mercado real: ele valida a mecânica das ordens, não o resultado. O painel mostra a execução na aba Sinais abertos.
+
 ## Arquivamento (para o painel não travar com o tempo)
 
 O painel lê no máximo 1.000 registros por coleção, começando pelos mais antigos. A cada rodada, os registros velhos vão para coleções de arquivo, que o painel não lê:
@@ -143,6 +154,7 @@ Usa só a biblioteca padrão do Python 3 e dados públicos da OKX (sem chave de 
 | [`scripts/analise_tecnica.py`](scripts/analise_tecnica.py) | Radar: candles e derivativos da OKX, setup, backtest, nota de qualidade e Top 10 |
 | [`scripts/avaliar_sinais.py`](scripts/avaliar_sinais.py) | Conferência dos sinais publicados contra os candles de 1h |
 | [`scripts/carteira.py`](scripts/carteira.py) | Carteira fictícia de US$ 2.000 |
+| [`scripts/executor_binance.py`](scripts/executor_binance.py) | Replica os sinais numa conta de teste da Binance Futures (só testnet), com travas de risco |
 | [`scripts/monitor.py`](scripts/monitor.py) | Trades ao vivo: conferência + carteira + quadro de cada trade em andamento e os avisos |
 | [`scripts/indicadores.py`](scripts/indicadores.py) | EMA, RSI, ATR e topos/fundos (funções puras, sem rede) |
 | [`scripts/radar_comum.py`](scripts/radar_comum.py) | Cliente da OKX com limite de requisições, datas, leitura dos sinais e a gestão de uma operação (stop, alvos e prazo), usada igual pela conferência e pelo backtest |

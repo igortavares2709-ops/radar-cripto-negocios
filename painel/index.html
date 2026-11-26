@@ -496,6 +496,10 @@
     <div class="rd-vivo-top" data-draw="vivo-topo" data-source="ao_vivo vivo_resumo vivo_resumo_conf"></div>
     <div class="rd-placar rd-vivo-tiles" data-draw="vivo-tiles" data-source="vivo_resumo vivo_resumo_conf"></div>
     <div class="rd-fut" data-draw="vivo-cards" data-source="vivo_agora ao_vivo_posicoes"></div>
+    <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Execução no testnet da Binance</h3>
+    <p class="rd-sub" data-draw="exec-sub" data-source="execucao_doc"></p>
+    <div class="rd-placar" data-draw="exec-tiles" data-source="execucao_doc"></div>
+    <ul class="rd-sinais" data-draw="exec-lista" data-source="execucao_doc"></ul>
     <h3 class="rd-h3" style="margin-top: var(--cds-gap-lg)">Últimos avisos</h3>
     <p class="rd-sub">Quando um trade é acionado, bate um alvo, bate o stop ou vence, aparece aqui e chega como aviso no celular.</p>
     <ul class="rd-sinais rd-vivo-ev" data-draw="vivo-eventos" data-source="ao_vivo_eventos"></ul>
@@ -2048,6 +2052,54 @@ dash.draw('vivo-eventos', (el) => {
     if (n % 10 === 0) ['futuros', 'carteira', 'briefings', 'scanner'].forEach((id) => dash.refresh(id));
   }, 30000);
 })();
+
+// ---------- Execução no testnet ----------
+dash.calc('execucao_doc', {
+  title: 'Execução no testnet da Binance',
+  description: 'Última execução do executor de sinais na conta de teste da Binance Futures: saldo de teste, posições, ordens enviadas ou canceladas, sinais pulados e erros.',
+  inputs: ['execucao'],
+  fn: (e) => {
+    const d = Array.isArray(e) ? e[0] : e;
+    if (!d) return [];
+    const lista = (k) => rdParse(d[k + '_json']);
+    return [{at: d.at, simulacao: !!d.simulacao, pausado: !!d.pausado, aviso: d.aviso || '', saldo_usdt: d.saldo_usdt ?? null,
+      posicoes: lista('posicoes').length, acoes: lista('acoes').length, ignorados: lista('ignorados').length, erros: lista('erros').length,
+      acoes_lista: lista('acoes'), ignorados_lista: lista('ignorados'), erros_lista: lista('erros'), posicoes_lista: lista('posicoes')}];
+  },
+});
+const rdExec = () => { const r = dash.data('execucao_doc'); return r.status === 'ok' && Array.isArray(r.data) && r.data[0] ? r.data[0] : null; };
+dash.draw('exec-sub', (el) => {
+  const d = rdExec();
+  if (!d) { el.textContent = 'O executor ainda não rodou. Ele roda junto com o monitor e as rodadas, e só opera numa conta de teste (dinheiro de mentira).'; return; }
+  el.textContent = 'Última execução: ' + rdFmt.when(d.at) + '. ' + (d.simulacao ? 'Em simulação: nenhuma ordem foi enviada' + (d.aviso ? ' (' + d.aviso + ')' : '') + '. ' : 'Ordens enviadas à conta de teste da Binance Futures (dinheiro de mentira). ') + (d.pausado ? 'Pausado: só administra o que já está aberto. ' : '') + 'O testnet tem preços próprios, que podem se afastar do mercado real: ele valida a mecânica das ordens, não o resultado.';
+});
+dash.draw('exec-tiles', (el) => {
+  el.replaceChildren();
+  const d = rdExec();
+  if (!d) return;
+  rdTiles(el, 'execucao_doc', [
+    {lbl: 'Saldo de teste', field: 'saldo_usdt', value: d.saldo_usdt == null ? '—' : rdFmt.usd(d.saldo_usdt), note: d.simulacao ? 'simulação' : 'USDT no testnet'},
+    {lbl: 'Posições abertas', field: 'posicoes', value: String(d.posicoes), note: 'no testnet'},
+    {lbl: 'Ordens nesta execução', field: 'acoes', value: String(d.acoes), note: 'enviadas ou canceladas'},
+    {lbl: 'Sinais pulados', field: 'ignorados', value: String(d.ignorados), note: 'pelas travas'},
+    {lbl: 'Erros', field: 'erros', value: String(d.erros), note: d.erros ? 'veja abaixo' : 'nenhum', cls: d.erros ? 'rd-down' : ''},
+  ]);
+});
+dash.draw('exec-lista', (el) => {
+  el.replaceChildren();
+  const d = rdExec();
+  if (!d) return;
+  const linha = (rotulo, cls, texto, meta) => { const li = rdEl('li'); const box = rdEl('div'); box.append(rdEl('div', '', texto)); if (meta) box.append(rdEl('div', 'rd-chg', meta)); li.append(rdEl('b', cls, rotulo), box); el.append(li); };
+  d.posicoes_lista.forEach((p) => linha(p.simbolo, p.quantidade >= 0 ? 'rd-up' : 'rd-down', (p.quantidade >= 0 ? 'comprado ' : 'vendido ') + Math.abs(p.quantidade) + ' a ' + rdNum(p.entrada), 'resultado em aberto ' + rdFmt.usdS(p.pnl_aberto)));
+  d.acoes_lista.forEach((a) => {
+    const o = a.ordem || {};
+    const txt = a.cancelar ? 'cancelou ' + a.cancelar : [o.side === 'BUY' ? 'compra' : 'venda', o.type, o.quantity, o.price ? 'a ' + o.price : '', o.stopPrice ? 'disparo ' + o.stopPrice : ''].filter(Boolean).join(' ');
+    linha(o.symbol || a.simbolo || '', a.erro ? 'rd-down' : '', txt + ' — ' + (a.motivo || ''), a.erro ? 'erro: ' + a.erro : (a.status ? 'situação: ' + a.status : 'simulação: não enviada'));
+  });
+  d.ignorados_lista.forEach((i) => linha('pulado', 'rd-chg', i.motivo, i.sinal && i.sinal !== '-' ? 'sinal ' + i.sinal : ''));
+  d.erros_lista.forEach((x) => linha('erro', 'rd-down', x, ''));
+  if (!el.children.length) el.append(rdEl('li', 'rd-empty', 'Nada a fazer nesta execução.'));
+});
 
 // ---------- Gráfico principal ----------
 dash.draw('chart-nome', (el) => { el.textContent = RD_ATIVO_NOME[rdState.ativo][0]; });
