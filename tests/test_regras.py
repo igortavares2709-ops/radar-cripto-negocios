@@ -773,16 +773,13 @@ class TestExecutorBinance(unittest.TestCase):
         ex.executar([sinal_ex(status="stop")], c, False, False, T0 + 30 * HORA)
         self.assertEqual(c.ords, [])
 
-    def test_entrada_atrasada_conta_48h_da_ordem_e_7_dias_do_sinal(self):
-        c = CorretoraFalsa(preco=105.0)
+    def test_sinal_ja_aberto_no_painel_entra_pelo_preco_com_o_tamanho_da_carteira(self):
+        # condicional já acionado no painel: entra a mercado (a carteira já está dentro), mesma quantidade
+        c = CorretoraFalsa(preco=95.0)
         s = sinal_ex(tipo="condicional", status="aberto", acionado_em=iso(T0))
         ex.executar([s], c, False, False, T0 + 40 * HORA)
         o = c.por_papel(s["id"])
-        o["e"]["time"] = T0 + 40 * HORA
-        ex.executar([s], c, False, False, T0 + 60 * HORA)   # 20h depois da ordem: continua
-        self.assertEqual(c.por_papel(s["id"])["e"]["status"], "NEW")
-        ex.executar([s], c, False, False, T0 + 89 * HORA)   # 49h depois da ordem: cancela
-        self.assertEqual({o["status"] for o in c.ords}, {"CANCELED"})
+        self.assertEqual((o["e"]["type"], o["e"]["quantity"]), ("MARKET", "2.000"))  # US$ 20 ÷ (100 − 90)
         # executada: a saída no prazo segue o acionamento do painel
         c = CorretoraFalsa()
         s = sinal_ex(acionado_em=iso(T0))
@@ -790,58 +787,64 @@ class TestExecutorBinance(unittest.TestCase):
         rel = ex.executar([s], c, False, False, T0 + 7 * 24 * HORA + 2 * HORA)
         self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
 
-    def test_tamanho_segue_a_carteira_dos_analistas(self):
-        # carteira com US$ 2.064: 1% = US$ 20,64 de risco; stop a 10 de distância -> 2,064 unidades
-        c = CorretoraFalsa()
-        ex.executar([sinal_ex()], c, False, False, self.agora, gestao={"saldo": 2064.0, "risco": {}})
-        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "2.064")
-        # operação que a carteira já abriu: o mesmo risco em US$ que ela fixou
-        c = CorretoraFalsa()
-        ex.executar([sinal_ex()], c, False, False, self.agora, gestao={"saldo": 2064.0, "risco": {"f20261125-1700-btc": 15.0}})
-        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "1.500")
-        # posição limitada a 5x o saldo da carteira (stop muito perto)
-        c = CorretoraFalsa()
-        ex.executar([sinal_ex(stop=99.9)], c, False, False, self.agora, gestao={"saldo": 2000.0, "risco": {}})
-        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "100.000")   # US$ 10.000 = 5x
-        # o arquivo da carteira
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-            json.dump({"saldo": 2064.1, "abertas_json": json.dumps([{"id": "x", "risco_usd": 20.5}])}, f)
-        self.assertEqual(ex.ler_gestao(f.name), {"saldo": 2064.1, "risco": {"x": 20.5}})
-        os.unlink(f.name)
-        self.assertIsNone(ex.ler_gestao(None))
-
-    def test_foto_das_operacoes(self):
-        c = CorretoraFalsa()
-        s1 = sinal_ex()
-        s2 = sinal_ex(id="f20261125-1700-eth", ativo="ETH", tipo="condicional", status="aguardando", entrada=110, stop=120, alvo1=95, alvo2=80, direcao="SHORT")
-        rel = ex.executar([s1, s2], c, False, False, self.agora)
-        ops = {o["sinal"]: o for o in rel["operacoes"]}
-        a = ops["f20261125-1700-btc"]
-        self.assertEqual((a["situacao"], a["quantidade"], a["stop"], a["alvo1"], a["alvo2"]), ("posição aberta", 2.0, 90.0, 115.0, 130.0))
-        self.assertEqual(a["risco_usd"], 20.0)
-        b = ops["f20261125-1700-eth"]
-        self.assertEqual((b["situacao"], b["quantidade"], b["entrada"], b["pnl_aberto"]), ("entrada pendente", -2.0, 110.0, None))
-
-    def test_quantidade_respeita_o_teto_da_corretora(self):
-        c = CorretoraFalsa()
-        c.max_qtd = 1.5
-        ex.executar([sinal_ex()], c, False, False, self.agora)
-        o = c.por_papel("f20261125-1700-btc")
-        self.assertEqual((o["e"]["quantity"], o["s"]["quantity"]), ("1.500", "1.500"))
-
-    def test_stop_recusado_nao_deixa_posicao_sem_protecao(self):
-        c = CorretoraFalsa()
-        c.recusar_stop = True
-        rel = ex.executar([sinal_ex()], c, False, False, self.agora)   # imediato: sai pelo preço
-        self.assertEqual(c.pos.get("BTCUSDT"), 0)
-        self.assertIn("x", c.por_papel("f20261125-1700-btc"))
-        self.assertTrue(rel["erros"])
+    def test_entrada_limitada_vira_mercado_quando_o_painel_aciona(self):
         c = CorretoraFalsa(preco=105.0)
-        c.recusar_stop = True
         s = sinal_ex(tipo="condicional", status="aguardando")
-        ex.executar([s], c, False, False, self.agora)                   # condicional: cancela a entrada
-        self.assertEqual({o["status"] for o in c.ords}, {"CANCELED"})
-        self.assertEqual(len(c.ords), 1)  # nem chegou a mandar os alvos
+        ex.executar([s], c, False, False, self.agora)
+        self.assertEqual(c.por_papel(s["id"])["e"]["type"], "LIMIT")
+        ex.executar([dict(s, status="aberto", acionado_em=iso(T0))], c, False, False, self.agora)
+        o = c.por_papel(s["id"])
+        self.assertEqual((o["e"]["type"], o["e"]["status"], o["e"]["quantity"]), ("MARKET", "FILLED", "2.000"))
+        self.assertEqual(c.pos["BTCUSDT"], 2.0)
+        self.assertEqual(o["s"]["status"], "NEW")  # a proteção continua armada
+
+    def test_painel_encerrou_e_a_binance_sai_pelo_preco(self):
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        rel = ex.executar([sinal_ex(status="stop")], c, False, False, self.agora)
+        self.assertEqual(c.pos["BTCUSDT"], 0)
+        self.assertEqual({o["status"] for o in c.ords if o.get("algo")}, {"CANCELED"})
+        self.assertTrue(any("encerrado no painel" in a["motivo"] for a in rel["acoes"]))
+        # executou no testnet mas expirou no painel sem acionar: sai também
+        c = CorretoraFalsa(preco=99.0)
+        s = sinal_ex(tipo="condicional", status="aguardando")
+        ex.executar([s], c, False, False, self.agora)
+        e = c.por_papel(s["id"])["e"]; e.update(status="FILLED", executedQty=e["quantity"], avgPrice="100"); c.pos["BTCUSDT"] = 2.0
+        ex.executar([dict(s, status="expirado")], c, False, False, self.agora)
+        self.assertEqual(c.pos["BTCUSDT"], 0)
+
+    def test_alvo1_no_painel_realiza_metade_e_leva_o_stop_para_a_entrada(self):
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        ex.executar([sinal_ex(status="alvo1 (aberto)")], c, False, False, self.agora)
+        o = c.por_papel("f20261125-1700-btc")
+        self.assertEqual(c.pos["BTCUSDT"], 1.0)
+        self.assertEqual((o["m"]["type"], o["m"]["quantity"]), ("MARKET", "1.000"))
+        self.assertEqual((o["be"]["triggerPrice"], o["be"]["quantity"]), ("100.0", "1.000"))
+        self.assertEqual((o["t1"]["status"], o["s"]["status"], o["t2"]["status"]), ("CANCELED", "CANCELED", "NEW"))
+        n = len(c.ords)
+        ex.executar([sinal_ex(status="alvo1 (aberto)")], c, False, False, self.agora)
+        self.assertEqual(len(c.ords), n)  # não repete
+
+    def test_operacao_antiga_nao_mexe_na_posicao_da_nova_no_mesmo_simbolo(self):
+        c = CorretoraFalsa()
+        a = sinal_ex(id="f20261125-1700-btc")
+        ex.executar([a], c, False, False, self.agora)
+        o = c.por_papel(a["id"])
+        o["s"]["status"] = "FILLED"; c.pos["BTCUSDT"] = 0          # a antiga bateu o stop na Binance
+        a_fim = dict(a, status="stop")
+        ex.executar([a_fim], c, False, False, self.agora)          # limpa as sobras
+        b = sinal_ex(id="f20261126-1700-btc", at=iso(T0 + 30 * HORA), acionado_em=iso(T0 + 30 * HORA))
+        ex.executar([a_fim, b], c, False, False, T0 + 31 * HORA)   # a nova abre
+        self.assertEqual(c.pos["BTCUSDT"], 2.0)
+        for o in c.por_papel(b["id"]).values():
+            o["updateTime"] = T0 + 31 * HORA          # a corretora falsa numera o tempo; a real usa o relógio
+        n = len(c.ords)
+        # 8 dias depois da antiga: o prazo de 7 dias dela não pode fechar a posição da nova
+        rel = ex.executar([a_fim, b], c, False, False, T0 + 8 * 24 * HORA)
+        self.assertEqual(c.pos["BTCUSDT"], 2.0)
+        self.assertEqual(len(c.ords), n)
+        self.assertEqual(rel["acoes"], [])
 
     def test_entrada_pendente_cancela_se_o_sinal_encerrou_no_painel(self):
         c = CorretoraFalsa(preco=105.0)

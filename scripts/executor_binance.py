@@ -19,6 +19,9 @@ O que faz em cada execução:
 - A Binance só aceita stop e alvo pela API de ordens algo (POST /fapi/v1/algoOrder, algoType
   CONDITIONAL), e "fechar posição" só com posição aberta; por isso a proteção vai com quantidade e
   "só reduzir" (reduceOnly), o que vale antes de a entrada condicional executar.
+- Segue o painel (a conta de teste tem preços próprios, então pode divergir da OKX): sinal que acionou
+  no painel e não no testnet entra pelo preço; alvo 1 no painel realiza a metade pelo preço e leva o
+  stop para a entrada; sinal encerrado no painel (stop, alvo, prazo ou expirado) sai pelo preço.
 - Cuida dos que já abriu: quando o alvo 1 executa, move o stop da metade restante para a entrada;
   recoloca proteção que sumiu; cancela a entrada condicional que não executou em 48h; fecha pelo preço
   a operação com mais de 7 dias; limpa ordens que sobraram de uma posição já fechada.
@@ -45,7 +48,7 @@ import urllib.request
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Dict, List, Optional
 
-from radar_comum import FINAIS, carregar_sinais, iso, ms, numero
+from radar_comum import ABERTOS, FINAIS, carregar_sinais, iso, ms, numero
 
 BASES_TESTNET = ("https://testnet.binancefuture.com",)  # a Demo Trading (demo-fapi) também bloqueia estes servidores (HTTP 451)
 RISCO_PCT = 1.0
@@ -55,7 +58,7 @@ TAMANHO_MAX_X_SALDO = 5   # como a carteira fictícia: posição de no máximo 5
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
 PREFIXO = "rd-"
-PAPEIS = ("e", "s", "t1", "t2", "be", "r", "t3", "x")  # entrada, stop, alvo 1, alvo 2, stop na entrada, stop recolocado, alvo 2 recolocado, saída no prazo
+PAPEIS = ("e", "s", "t1", "t2", "be", "r", "t3", "x", "m")  # entrada, stop, alvo 1, alvo 2, stop na entrada, stop recolocado, alvo 2 recolocado, saída pelo preço, metade pelo preço
 ALGO = ("s", "t1", "t2", "be", "r", "t3")  # papéis que vão pela API de ordens algo
 # estados das ordens algo traduzidos para os das ordens comuns
 ESTADO_ALGO = {"NEW": "NEW", "TRIGGERED": "FILLED", "FINISHED": "FILLED", "CANCELED": "CANCELED",
@@ -218,8 +221,9 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float, gestao: Optio
     if (preco - a1) * sgn >= 0:
         return {"pular": f"o preço ({preco}) já passou do alvo 1"}
     imediato = s.get("tipo") == "imediato"
+    imediato = imediato or s.get("status") in ABERTOS  # já acionado no painel: entra pelo preço, como a carteira já está dentro
     ref = preco if imediato else e
-    dist = abs(ref - st)
+    dist = abs(e - st)  # tamanho como o da carteira: risco ÷ distância da entrada do sinal até o stop
     base = float(gestao["saldo"]) if gestao and gestao.get("saldo") else saldo
     risco_usd = float((gestao or {}).get("risco", {}).get(s["id"]) or base * RISCO_PCT / 100)
     alav = max(1, int(numero(s.get("alavancagem_max") or ALAV_PADRAO)))
@@ -274,9 +278,12 @@ def ordens_do_sinal(ordens: List[dict], sinal_id: str) -> Dict[str, dict]:
     return out
 
 
-def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, agora_ms: int) -> List[dict]:
+def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, agora_ms: int, dono: bool = True) -> List[dict]:
     """O que fazer com um sinal que já tem ordens. Devolve uma lista de ações
-    ({"cancelar": cid, "algo": bool} ou {"enviar": ordem, "algo": bool}, com "motivo")."""
+    ({"cancelar": cid, "algo": bool} ou {"enviar": ordem, "algo": bool}, com "motivo").
+    `dono`: este é o sinal mais recente com entrada executada no símbolo, ou seja, a posição é dele.
+    A Binance segue o painel: quando o painel encerra, realiza a metade no alvo 1 ou aciona a
+    entrada, a conta de teste faz o mesmo pelo preço (os preços do testnet são outros)."""
     sim, sid = simbolo_de(s["ativo"]), s["id"]
     e = ords.get("e")
     if not e:
@@ -296,10 +303,22 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
                            "quantity": qtd, "reduceOnly": "true", "workingType": "MARK_PRICE", "clientAlgoId": cid(sid, papel)},
                 "algo": True, "motivo": motivo}
 
+    def a_mercado(papel, qtd, motivo):
+        return {"enviar": {"symbol": sim, "side": contra, "type": "MARKET", "reduceOnly": "true", "quantity": qtd,
+                           "newClientOrderId": cid(sid, papel)}, "algo": False, "motivo": motivo}
+
     executada = float(e.get("executedQty", 0))
+    if executada > 0 and not dono:
+        return cancelar_todas("operação anterior neste símbolo já encerrada: limpando ordens dela")
     if e.get("status") in ("NEW", "PARTIALLY_FILLED") and executada == 0:
         if s.get("status") in FINAIS:
             return cancelar_todas(f"sinal encerrado no painel ({s.get('status')}) antes de a entrada executar")
+        if s.get("status") in ABERTOS and e.get("type") == "LIMIT" and not pos_qtd:
+            # o painel já entrou (a OKX tocou a entrada) e o testnet não: entra pelo preço, mesma quantidade
+            lado = "BUY" if sgn > 0 else "SELL"
+            return cancelar(["e"], "o sinal já está aberto no painel: trocando a entrada limitada pela entrada a mercado") + [
+                {"enviar": {"symbol": sim, "side": lado, "type": "MARKET", "quantity": str(e.get("origQty") or e.get("quantity")),
+                            "newClientOrderId": cid(sid, "e")}, "algo": False, "motivo": "entrada pelo preço, como no painel"}]
         # sinal que entrou atrasado (já acionado no painel): as 48h contam de quando a ordem foi posta
         inicio = ms(s["at"])
         if s.get("acionado_em"):
@@ -312,6 +331,10 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
     if not pos_qtd:
         return cancelar_todas("posição já encerrada: limpando ordens que sobraram")
     acoes = []
+    if s.get("status") in FINAIS:  # stop, alvo 2, prazo, ou expirou sem acionar no painel
+        acoes += cancelar_todas(f"sinal encerrado no painel ({s.get('status')})")
+        acoes.append(a_mercado("x", arred_qtd(abs(pos_qtd), r["step"]), f"sinal encerrado no painel ({s.get('status')}): saída pelo preço, como a carteira"))
+        return acoes
     aberta_em = int(e.get("updateTime") or ms(s["at"]))
     try:  # entrada atrasada: o prazo de 7 dias é o do sinal no painel, não o da ordem
         aberta_em = min(aberta_em, ms(s["acionado_em"])) if s.get("acionado_em") else aberta_em
@@ -319,14 +342,24 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
         pass
     if agora_ms - aberta_em > OPERACAO_MAX_H * 3600_000:
         acoes += cancelar_todas("prazo de 7 dias")
-        acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "MARKET", "reduceOnly": "true",
-                                 "quantity": arred_qtd(abs(pos_qtd), r["step"]), "newClientOrderId": cid(sid, "x")},
-                      "algo": False, "motivo": "prazo de 7 dias: saída pelo preço"})
+        acoes.append(a_mercado("x", arred_qtd(abs(pos_qtd), r["step"]), "prazo de 7 dias: saída pelo preço"))
         return acoes
     resto = arred_qtd(abs(pos_qtd), r["step"])
     preco_medio = float(e.get("avgPrice") or 0) or numero(s["entrada"])
-    t1_feito = ords.get("t1", {}).get("status") == "FILLED"
+    t1_feito = ords.get("t1", {}).get("status") == "FILLED" or ords.get("m", {}).get("status") == "FILLED"
     tem_stop_vivo = any(p in vivas for p in ("s", "be", "r"))
+    if s.get("status") == "alvo1 (aberto)" and not t1_feito and "be" not in ords and "m" not in ords:
+        # o painel realizou a metade no alvo 1 e o testnet não: realiza pelo preço e leva o stop para a entrada
+        metade = arred_qtd(abs(pos_qtd) / 2, r["step"])
+        if Decimal(metade) >= Decimal(r["min_qtd"]):
+            sobra = str(Decimal(resto) - Decimal(metade))
+            acoes += cancelar(["t1", "s", "r"], "alvo 1 no painel: realizando a metade")
+            acoes.append(a_mercado("m", metade, "alvo 1 no painel: metade pelo preço, como a carteira"))
+            acoes.append(prot("be", "STOP_MARKET", preco_medio, sobra, "stop da metade restante na entrada"))
+            if "t2" in vivas and Decimal(str(vivas["t2"].get("quantity") or "0")) > Decimal(sobra):
+                acoes += cancelar(["t2"], "alvo 2 ajustado à metade restante")
+                acoes.append(prot("t3", "TAKE_PROFIT_MARKET", numero(s["alvo2"]), sobra, "alvo 2 da metade restante"))
+            return acoes
     if t1_feito and "be" not in ords:
         acoes += cancelar(["s", "r"], "alvo 1 executou: stop vai para a entrada")
         acoes.append(prot("be", "STOP_MARKET", preco_medio, resto, "stop da metade restante na entrada"))
@@ -406,6 +439,7 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
 
     # 1) administrar o que já foi aberto (sinais com ordens nossas)
     ocupados = set(posicoes)
+    com_ordens = []
     for s in sinais:
         if s.get("direcao") not in ("LONG", "SHORT") or simbolo_de(s.get("ativo", "")) not in regras:
             continue
@@ -415,12 +449,21 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
         except BinanceErro as e:
             rel["erros"].append(f"{s['id']}: {e}")
             continue
-        if not ords:
-            continue
+        if ords:
+            com_ordens.append((s, sim, ords))
+    # a posição de um símbolo é do sinal mais recente com entrada executada (um só por vez por símbolo)
+    dono: Dict[str, tuple] = {}
+    for s, sim, ords in com_ordens:
+        e = ords.get("e") or {}
+        if float(e.get("executedQty") or 0) > 0:
+            quando = int(e.get("time") or e.get("updateTime") or 0)
+            if sim not in dono or quando >= dono[sim][0]:
+                dono[sim] = (quando, s["id"])
+    for s, sim, ords in com_ordens:
         if any(o.get("status") in ("NEW", "PARTIALLY_FILLED") for o in ords.values()):
             ocupados.add(sim)
         pos = float(posicoes.get(sim, {}).get("positionAmt", 0))
-        for a in acoes_de_gestao(s, ords, pos, regras[sim], agora_ms):
+        for a in acoes_de_gestao(s, ords, pos, regras[sim], agora_ms, dono=dono.get(sim, (0, s["id"]))[1] == s["id"]):
             fazer(a, s["id"])
 
     def por_alavancagem(sim) -> bool:
@@ -437,8 +480,8 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
 
     # margem: os símbolos que já operam também ficam com a alavancagem de margem (libera margem para os próximos)
     if not simular:
-        for sim in sorted(ocupados):
-            if int(float(posicoes.get(sim, {}).get("leverage") or 0)) != ALAV_MARGEM:
+        for sim in sorted(ocupados & set(posicoes)):
+            if int(float(posicoes[sim].get("leverage") or 0)) < 5:  # aberta antes da margem de 10x (ou o máximo do símbolo)
                 por_alavancagem(sim)
 
     def desfazer_sem_stop(s, sim, qtd, entrada, enviadas):
@@ -544,7 +587,7 @@ def foto_das_operacoes(cli, sinais: List[dict], regras: Dict[str, dict]) -> List
                 "pnl_aberto": None if pendente else round(float(pos.get("unRealizedProfit") or 0), 2),
                 "stop": stop, "alvo1": disparo("t1"), "alvo2": disparo("t2", "t3"),
                 "stop_na_entrada": "be" in vivas,
-                "alvo1_feito": ords.get("t1", {}).get("status") == "FILLED",
+                "alvo1_feito": ords.get("t1", {}).get("status") == "FILLED" or ords.get("m", {}).get("status") == "FILLED",
                 "risco_usd": round(abs(qtd) * abs(entrada - stop), 2) if stop and entrada else None,
             })
     return out
