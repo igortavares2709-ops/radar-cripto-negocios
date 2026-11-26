@@ -728,10 +728,9 @@ class TestExecutorBinance(unittest.TestCase):
         c = CorretoraFalsa()
         ex.executar([sinal_ex()], c, False, True, self.agora)
         self.assertEqual(c.ords, [])
-        c = CorretoraFalsa(pnl_hoje=-70.0)
-        rel = ex.executar([sinal_ex()], c, False, False, self.agora)
-        self.assertEqual(c.ords, [])
-        self.assertIn("perda realizada", rel["ignorados"][0]["motivo"])
+        c = CorretoraFalsa(pnl_hoje=-70.0)  # sem limite de perda do dia: segue os sinais
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        self.assertTrue(c.ords)
 
     def test_prazo_de_7_dias_funciona_mesmo_com_historico_limitado(self):
         # a entrada tem mais de 7 dias: a consulta padrão não a devolve, a janela do sinal sim
@@ -744,19 +743,26 @@ class TestExecutorBinance(unittest.TestCase):
         self.assertEqual(o["x"]["type"], "MARKET")
         self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
 
-    def test_nao_corre_atras_do_preco(self):
-        # entrada 100, alvo 1 115: com o preço a 108 já andou mais da metade do caminho
-        c = CorretoraFalsa(preco=108.0)
-        rel = ex.executar([sinal_ex()], c, False, False, self.agora)
-        self.assertEqual(c.ords, [])
-        self.assertIn("correr atrás", rel["ignorados"][0]["motivo"])
-        c = CorretoraFalsa(preco=106.0)  # menos da metade: entra
-        ex.executar([sinal_ex()], c, False, False, self.agora)
-        self.assertTrue(c.ords)
-        # condicional não tem essa trava: a entrada é limitada no preço do sinal
-        c = CorretoraFalsa(preco=108.0)
-        ex.executar([sinal_ex(tipo="condicional", status="aguardando")], c, False, False, self.agora)
-        self.assertTrue(c.ords)
+    def test_sem_limite_de_trades_e_entra_mesmo_com_o_preco_andado(self):
+        simbolos = tuple(f"C{i}USDT" for i in range(12))
+        c = CorretoraFalsa(preco=110.0, simbolos=simbolos)   # já andou 2/3 do caminho até o alvo 1
+        sinais = [sinal_ex(id=f"f20261125-1700-c{i}", ativo=f"C{i}") for i in range(12)]
+        rel = ex.executar(sinais, c, False, False, self.agora)
+        self.assertEqual(len({o["symbol"] for o in c.ords}), 12)
+        self.assertEqual(rel["ignorados"], [])
+
+    def test_entrada_cancelada_sem_executar_entra_de_novo(self):
+        c = CorretoraFalsa(preco=105.0)
+        s = sinal_ex(tipo="condicional", status="aguardando")
+        c.recusar_stop = True
+        ex.executar([s], c, False, False, self.agora)          # stop recusado: desfez tudo
+        c.recusar_stop = False
+        ex.executar([s], c, False, False, self.agora)          # o sinal ainda vale: entra de novo
+        vivas = {o["clientOrderId"] for o in c.ords if o["status"] == "NEW"}
+        self.assertEqual(vivas, {ex.cid(s["id"], p) for p in ("e", "s", "t1", "t2")})
+        n = len(c.ords)
+        ex.executar([s], c, False, False, self.agora)
+        self.assertEqual(len(c.ords), n)                       # e não duplica
 
     def test_sinal_antigo_ainda_valido_abre(self):
         c = CorretoraFalsa()

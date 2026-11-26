@@ -13,7 +13,7 @@ O que faz em cada execução:
 - Abre os sinais LONG/SHORT ainda válidos ("aguardando" ou "aberto"), novos e antigos, os mais novos primeiro:
   entrada a mercado (imediato) ou limitada (condicional) e, junto, a proteção: stop da posição inteira,
   metade no alvo 1 e metade no alvo 2. Tamanho: 1% do saldo de risco até o stop, como a carteira
-  fictícia; alavancagem até a do sinal (máx. 5x).
+  fictícia; alavancagem a do sinal (5x se o sinal não disser).
 - A Binance só aceita stop e alvo pela API de ordens algo (POST /fapi/v1/algoOrder, algoType
   CONDITIONAL), e "fechar posição" só com posição aberta; por isso a proteção vai com quantidade e
   "só reduzir" (reduceOnly), o que vale antes de a entrada condicional executar.
@@ -23,9 +23,11 @@ O que faz em cada execução:
 - Não guarda estado: cada ordem tem um código "rd-<id do sinal>-<papel>" (clientOrderId ou
   clientAlgoId), e o que já foi feito é lido da própria corretora. Rodar duas vezes não duplica nada.
 
-Travas: só aceita endereços do testnet; no máximo 4 trades novos por execução e 8 abertos ao mesmo
-tempo; não abre novos se a perda realizada do dia passar de 3% do saldo; --pausado só protege e
-administra o que já está aberto; um símbolo com posição ou ordens de outro sinal não recebe outro.
+Segue os sinais como os analistas publicam, sem limite de quantidade de trades nem de perda do dia.
+Só ficam as checagens técnicas: só aceita endereços do testnet; pula a moeda que não existe no testnet
+e o sinal cujo preço já passou do stop ou do alvo 1; nenhuma posição fica sem stop; um símbolo com
+posição ou ordens de outro sinal não recebe outro (a conta tem uma posição por símbolo); --pausado só
+protege e administra o que já está aberto.
 Na saída padrão, o relatório em JSON. Só biblioteca padrão. Nada aqui é recomendação de investimento.
 """
 import argparse
@@ -45,11 +47,7 @@ from radar_comum import FINAIS, carregar_sinais, iso, ms, numero
 
 BASES_TESTNET = ("https://testnet.binancefuture.com",)  # a Demo Trading (demo-fapi) também bloqueia estes servidores (HTTP 451)
 RISCO_PCT = 1.0
-ALAV_MAX = 5
-MAX_NOVAS_POR_EXECUCAO = 4
-MAX_ABERTAS = 8
-PERDA_DIARIA_MAX_PCT = 3.0
-ANDOU_MAX_ATE_ALVO1 = 0.5  # imediato: não entra se o preço já fez mais que isso do caminho entrada -> alvo 1
+ALAV_PADRAO = 5           # quando o sinal não traz alavancagem_max
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
 PREFIXO = "rd-"
@@ -186,7 +184,7 @@ def simbolo_de(ativo: str) -> str:
 
 def sinais_para_abrir(sinais: List[dict], agora_ms: int) -> List[dict]:
     """LONG/SHORT ainda válidos no painel ("aguardando" ou "aberto"), de qualquer idade, mais novos primeiro.
-    Um sinal antigo entra atrasado: as travas de planejar_entrada (stop, alvo 1, metade do caminho) decidem se ainda vale."""
+    Um sinal antigo entra atrasado: planejar_entrada só o pula se o preço já passou do stop ou do alvo 1."""
     out = []
     for s in sinais:
         if s.get("direcao") not in ("LONG", "SHORT") or s.get("status") not in (None, "aguardando", "aberto"):
@@ -195,8 +193,9 @@ def sinais_para_abrir(sinais: List[dict], agora_ms: int) -> List[dict]:
             t = ms(s["at"])
         except Exception:
             continue
-        if t <= agora_ms:
-            out.append(s)
+        if t > agora_ms or (s.get("status") in (None, "aguardando") and agora_ms - t > GATILHO_MAX_H * 3600_000):
+            continue  # ainda no futuro, ou gatilho vencido (o painel vai marcar expirado)
+        out.append(s)
     return sorted(out, key=lambda s: str(s.get("at")), reverse=True)
 
 
@@ -214,12 +213,10 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     if (preco - a1) * sgn >= 0:
         return {"pular": f"o preço ({preco}) já passou do alvo 1"}
     imediato = s.get("tipo") == "imediato"
-    if imediato and (preco - e) * sgn > ANDOU_MAX_ATE_ALVO1 * (a1 - e) * sgn:
-        return {"pular": f"o preço ({preco}) já andou mais da metade do caminho até o alvo 1: entrar agora seria correr atrás"}
     ref = preco if imediato else e
     dist = abs(ref - st)
     risco_usd = saldo * RISCO_PCT / 100
-    alav = max(1, min(ALAV_MAX, int(numero(s.get("alavancagem_max") or ALAV_MAX))))
+    alav = max(1, int(numero(s.get("alavancagem_max") or ALAV_PADRAO)))
     qtd = risco_usd / dist
     qtd = min(qtd, saldo * alav * 0.9 / ref)  # cabe na margem com a alavancagem escolhida
     if r.get("max_qtd"):
@@ -248,6 +245,14 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     protecao.append(prot("t2", "TAKE_PROFIT_MARKET", a2, resto))
     return {"simbolo": sim, "alavancagem": alav, "quantidade": q, "risco_usd": round(risco_usd, 2),
             "ordens": [entrada] + protecao}
+
+
+def pode_reabrir(ords: Dict[str, dict]) -> bool:
+    """O sinal ainda vale no painel, mas a entrada daqui foi cancelada sem executar nada (stop recusado,
+    ordem limitada que venceu, cancelamento manual) e não sobrou ordem viva: entra de novo, como o painel."""
+    e = ords.get("e")
+    return bool(e) and e.get("status") in ("CANCELED", "EXPIRED", "REJECTED") and float(e.get("executedQty") or 0) == 0 \
+        and not any(o.get("status") in ("NEW", "PARTIALLY_FILLED", "FILLED") for p, o in ords.items() if p != "e")
 
 
 def ordens_do_sinal(ordens: List[dict], sinal_id: str) -> Dict[str, dict]:
@@ -424,26 +429,16 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
     if pausado:
         rel["ignorados"].append({"sinal": "-", "motivo": "executor pausado: nenhum trade novo"})
         return rel
-    try:
-        perda = cli.pnl_realizado_hoje()
-    except BinanceErro:
-        perda = 0.0
-    if saldo > 0 and perda < -saldo * PERDA_DIARIA_MAX_PCT / 100:
-        rel["ignorados"].append({"sinal": "-", "motivo": f"perda realizada hoje (US$ {perda:.2f}) passou de {PERDA_DIARIA_MAX_PCT}% do saldo"})
-        return rel
-    novas = 0
     for s in sinais_para_abrir(sinais, agora_ms):
         sim = simbolo_de(s["ativo"])
         if sim not in regras:
             rel["ignorados"].append({"sinal": s["id"], "motivo": f"{sim} não existe no testnet"})
             continue
-        if ordens_do_sinal(ordens_de(sim, s), s["id"]):
+        anteriores = ordens_do_sinal(ordens_de(sim, s), s["id"])
+        if anteriores and not pode_reabrir(anteriores):
             continue  # já executado antes
         if sim in ocupados:
             rel["ignorados"].append({"sinal": s["id"], "motivo": f"{sim} já tem posição ou ordens abertas"})
-            continue
-        if len(ocupados) >= MAX_ABERTAS or novas >= MAX_NOVAS_POR_EXECUCAO:
-            rel["ignorados"].append({"sinal": s["id"], "motivo": "limite de trades simultâneos ou por execução"})
             continue
         try:
             plano = planejar_entrada(s, regras[sim], saldo, cli.preco(sim))
@@ -471,7 +466,6 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
                 break
             enviadas.append(o)
         ocupados.add(sim)
-        novas += 1
     return rel
 
 
