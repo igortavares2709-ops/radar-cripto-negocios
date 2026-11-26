@@ -753,10 +753,38 @@ class TestExecutorBinance(unittest.TestCase):
         ex.executar([sinal_ex(tipo="condicional", status="aguardando")], c, False, False, self.agora)
         self.assertTrue(c.ords)
 
-    def test_sinal_antigo_nao_abre(self):
+    def test_sinal_antigo_ainda_valido_abre(self):
         c = CorretoraFalsa()
-        ex.executar([sinal_ex()], c, False, False, T0 + 7 * HORA)
+        ex.executar([sinal_ex(acionado_em=iso(T0))], c, False, False, T0 + 30 * HORA)
+        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["type"], "MARKET")
+        # encerrado no painel não abre
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex(status="stop")], c, False, False, T0 + 30 * HORA)
         self.assertEqual(c.ords, [])
+
+    def test_entrada_atrasada_conta_48h_da_ordem_e_7_dias_do_sinal(self):
+        c = CorretoraFalsa(preco=105.0)
+        s = sinal_ex(tipo="condicional", status="aberto", acionado_em=iso(T0))
+        ex.executar([s], c, False, False, T0 + 40 * HORA)
+        o = c.por_papel(s["id"])
+        o["e"]["time"] = T0 + 40 * HORA
+        ex.executar([s], c, False, False, T0 + 60 * HORA)   # 20h depois da ordem: continua
+        self.assertEqual(c.por_papel(s["id"])["e"]["status"], "NEW")
+        ex.executar([s], c, False, False, T0 + 89 * HORA)   # 49h depois da ordem: cancela
+        self.assertEqual({o["status"] for o in c.ords}, {"CANCELED"})
+        # executada: a saída no prazo segue o acionamento do painel
+        c = CorretoraFalsa()
+        s = sinal_ex(acionado_em=iso(T0))
+        ex.executar([s], c, False, False, T0 + 100 * HORA)
+        rel = ex.executar([s], c, False, False, T0 + 7 * 24 * HORA + 2 * HORA)
+        self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
+
+    def test_entrada_pendente_cancela_se_o_sinal_encerrou_no_painel(self):
+        c = CorretoraFalsa(preco=105.0)
+        s = sinal_ex(tipo="condicional", status="aguardando")
+        ex.executar([s], c, False, False, self.agora)
+        ex.executar([dict(s, status="expirado")], c, False, False, self.agora)
+        self.assertEqual({o["status"] for o in c.ords}, {"CANCELED"})
 
     def test_simular_nao_envia(self):
         c = CorretoraFalsa()

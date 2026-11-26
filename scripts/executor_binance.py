@@ -10,7 +10,7 @@ Chaves: variáveis de ambiente BINANCE_TESTNET_API_KEY e BINANCE_TESTNET_API_SEC
 testnet: https://testnet.binancefuture.com). Sem elas, roda em simulação.
 
 O que faz em cada execução:
-- Abre os sinais LONG/SHORT novos (publicados nas últimas 6 horas, ainda "aguardando" ou "aberto"):
+- Abre os sinais LONG/SHORT ainda válidos ("aguardando" ou "aberto"), novos e antigos, os mais novos primeiro:
   entrada a mercado (imediato) ou limitada (condicional) e, junto, a proteção: stop da posição inteira,
   metade no alvo 1 e metade no alvo 2. Tamanho: 1% do saldo de risco até o stop, como a carteira
   fictícia; alavancagem até a do sinal (máx. 5x).
@@ -41,7 +41,7 @@ import urllib.request
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Dict, List, Optional
 
-from radar_comum import carregar_sinais, iso, ms, numero
+from radar_comum import FINAIS, carregar_sinais, iso, ms, numero
 
 BASES_TESTNET = ("https://testnet.binancefuture.com",)  # a Demo Trading (demo-fapi) também bloqueia estes servidores (HTTP 451)
 RISCO_PCT = 1.0
@@ -49,7 +49,6 @@ ALAV_MAX = 5
 MAX_NOVAS_POR_EXECUCAO = 4
 MAX_ABERTAS = 8
 PERDA_DIARIA_MAX_PCT = 3.0
-JANELA_NOVO_H = 6          # só abre sinais publicados há menos disso
 ANDOU_MAX_ATE_ALVO1 = 0.5  # imediato: não entra se o preço já fez mais que isso do caminho entrada -> alvo 1
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
@@ -182,8 +181,9 @@ def simbolo_de(ativo: str) -> str:
     return str(ativo).upper() + "USDT"
 
 
-def sinais_novos(sinais: List[dict], agora_ms: int) -> List[dict]:
-    """LONG/SHORT ainda não encerrados, publicados há menos de JANELA_NOVO_H horas, mais novos primeiro."""
+def sinais_para_abrir(sinais: List[dict], agora_ms: int) -> List[dict]:
+    """LONG/SHORT ainda válidos no painel ("aguardando" ou "aberto"), de qualquer idade, mais novos primeiro.
+    Um sinal antigo entra atrasado: as travas de planejar_entrada (stop, alvo 1, metade do caminho) decidem se ainda vale."""
     out = []
     for s in sinais:
         if s.get("direcao") not in ("LONG", "SHORT") or s.get("status") not in (None, "aguardando", "aberto"):
@@ -192,7 +192,7 @@ def sinais_novos(sinais: List[dict], agora_ms: int) -> List[dict]:
             t = ms(s["at"])
         except Exception:
             continue
-        if 0 <= agora_ms - t <= JANELA_NOVO_H * 3600_000:
+        if t <= agora_ms:
             out.append(s)
     return sorted(out, key=lambda s: str(s.get("at")), reverse=True)
 
@@ -279,7 +279,13 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
 
     executada = float(e.get("executedQty", 0))
     if e.get("status") in ("NEW", "PARTIALLY_FILLED") and executada == 0:
-        if agora_ms - ms(s["at"]) > GATILHO_MAX_H * 3600_000:
+        if s.get("status") in FINAIS:
+            return cancelar_todas(f"sinal encerrado no painel ({s.get('status')}) antes de a entrada executar")
+        # sinal que entrou atrasado (já acionado no painel): as 48h contam de quando a ordem foi posta
+        inicio = ms(s["at"])
+        if s.get("acionado_em"):
+            inicio = max(inicio, int(e.get("time") or e.get("updateTime") or inicio))
+        if agora_ms - inicio > GATILHO_MAX_H * 3600_000:
             return cancelar_todas("entrada condicional não executou em 48h")
         return []
     if e.get("status") in ("CANCELED", "EXPIRED", "REJECTED") and executada == 0:
@@ -288,6 +294,10 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
         return cancelar_todas("posição já encerrada: limpando ordens que sobraram")
     acoes = []
     aberta_em = int(e.get("updateTime") or ms(s["at"]))
+    try:  # entrada atrasada: o prazo de 7 dias é o do sinal no painel, não o da ordem
+        aberta_em = min(aberta_em, ms(s["acionado_em"])) if s.get("acionado_em") else aberta_em
+    except Exception:
+        pass
     if agora_ms - aberta_em > OPERACAO_MAX_H * 3600_000:
         acoes += cancelar_todas("prazo de 7 dias")
         acoes.append({"enviar": {"symbol": sim, "side": contra, "type": "MARKET", "reduceOnly": "true",
@@ -405,12 +415,12 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
         rel["ignorados"].append({"sinal": "-", "motivo": f"perda realizada hoje (US$ {perda:.2f}) passou de {PERDA_DIARIA_MAX_PCT}% do saldo"})
         return rel
     novas = 0
-    for s in sinais_novos(sinais, agora_ms):
+    for s in sinais_para_abrir(sinais, agora_ms):
         sim = simbolo_de(s["ativo"])
         if sim not in regras:
             rel["ignorados"].append({"sinal": s["id"], "motivo": f"{sim} não existe no testnet"})
             continue
-        if ordens_do_sinal(ordens_de(sim), s["id"]):
+        if ordens_do_sinal(ordens_de(sim, s), s["id"]):
             continue  # já executado antes
         if sim in ocupados:
             rel["ignorados"].append({"sinal": s["id"], "motivo": f"{sim} já tem posição ou ordens abertas"})
