@@ -67,7 +67,11 @@ def precos_atuais() -> Dict[str, float]:
 COINGECKO_MARKETS = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&include_tokens=top&symbols="
 
 
-def ids_coingecko(simbolos: List[str], tentativas: int = 3, espera: float = 4.0) -> Dict[str, str]:
+DESVIO_MAX_PRECO = 0.20  # código do CoinGecko só vale se o preço dele ficar a até 20% do da OKX
+
+
+def ids_coingecko(simbolos: List[str], tentativas: int = 3, espera: float = 4.0,
+                  precos_okx: Optional[Dict[str, float]] = None) -> Dict[str, str]:
     """Código do CoinGecko de cada símbolo (ex.: VVV -> venice-token), para o painel buscar o preço
     ao vivo. Quando um símbolo tem várias moedas, vale a de maior valor de mercado. A API gratuita
     recusa pedidos em excesso (HTTP 429), então tenta de novo com espera. {} se não conseguir."""
@@ -90,6 +94,10 @@ def ids_coingecko(simbolos: List[str], tentativas: int = 3, espera: float = 4.0)
     melhor: Dict[str, dict] = {}
     for m in moedas if isinstance(moedas, list) else []:
         sim = str(m.get("symbol", "")).lower()
+        ref = (precos_okx or {}).get(sim.upper())
+        preco = m.get("current_price")
+        if ref and (not isinstance(preco, (int, float)) or preco <= 0 or abs(preco / ref - 1) > DESVIO_MAX_PRECO):
+            continue  # mesmo símbolo, outra moeda (preço muito diferente do perpétuo da OKX)
         if sim in simbolos and (sim not in melhor or (m.get("market_cap") or 0) > (melhor[sim].get("market_cap") or 0)):
             melhor[sim] = m
     return {sim.upper(): m["id"] for sim, m in melhor.items() if m.get("id")}
@@ -212,7 +220,7 @@ def monitorar(sinais: List[dict], anterior: dict, agora_ms: Optional[int] = None
         pass
     faltam = sorted({str(p.get("ativo", "")).upper() for p in posicoes} - set(conhecidos))
     if faltam:
-        conhecidos.update(ids_coingecko(faltam))
+        conhecidos.update(ids_coingecko(faltam, precos_okx=precos))
     sem_codigo = sorted({str(p.get("ativo", "")).upper() for p in posicoes} - set(conhecidos))
     for p in posicoes:
         p["cg_id"] = conhecidos.get(str(p.get("ativo", "")).upper())

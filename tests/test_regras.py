@@ -379,7 +379,7 @@ class TestMonitor(unittest.TestCase):
 
     def setUp(self):
         self.orig_get, self.orig_candles, self.orig_cg = mon.okx.get, av.candles_1h, mon.ids_coingecko
-        mon.ids_coingecko = lambda simbolos: {"BTC": "bitcoin"}
+        mon.ids_coingecko = lambda simbolos, **kw: {"BTC": "bitcoin"}
 
     def tearDown(self):
         mon.okx.get, av.candles_1h, mon.ids_coingecko = self.orig_get, self.orig_candles, self.orig_cg
@@ -432,7 +432,7 @@ class TestMonitor(unittest.TestCase):
 
     def test_codigos_do_coingecko_vem_da_memoria_e_so_busca_os_novos(self):
         pedidos = []
-        mon.ids_coingecko = lambda simbolos: pedidos.append(list(simbolos)) or {}
+        mon.ids_coingecko = lambda simbolos, **kw: pedidos.append(list(simbolos)) or {}
         anterior = {"cg_ids": {"BTC": "bitcoin"}}
         r = self.rodar([sinal(status="aberto")], 105.0, candles((106, 99, 105)), anterior)
         self.assertEqual(pedidos, [])  # BTC já estava na memória
@@ -463,6 +463,24 @@ class TestMonitor(unittest.TestCase):
         finally:
             mon.urllib.request.urlopen = orig
         self.assertEqual(len(chamadas), 3)
+
+    def test_ids_coingecko_recusa_moeda_com_preco_diferente_da_okx(self):
+        import io
+        resposta = json.dumps([{"symbol": "gram", "id": "the-open-network", "market_cap": 2e9, "current_price": 0.96},
+                               {"symbol": "gram", "id": "blockgram", "market_cap": 3e12, "current_price": 0.00002},
+                               {"symbol": "abc", "id": "abc-falso", "market_cap": 9e9, "current_price": 50.0}]).encode()
+
+        class R(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        orig = mon.urllib.request.urlopen
+        mon.urllib.request.urlopen = lambda req, timeout=None: R(resposta)
+        try:
+            r = self.orig_cg(["GRAM", "ABC"], espera=0, precos_okx={"GRAM": 0.9606, "ABC": 1.0})
+        finally:
+            mon.urllib.request.urlopen = orig
+        # GRAM: fica a de preço igual ao da OKX, mesmo com outra de valor de mercado maior; ABC: nenhuma bate
+        self.assertEqual(r, {"GRAM": "the-open-network"})
 
     def test_aguardando_mostra_distancia_ate_a_entrada(self):
         s = sinal(tipo="condicional", entrada=95, stop=85, alvo1=110, alvo2=125, status="aguardando")
@@ -570,11 +588,20 @@ class CorretoraFalsa:
     def cancelar_algo(self, s, c):
         self.cancelar(s, c)
 
-    def ordens(self, s):
-        return [o for o in self.ords if o["symbol"] == s and not o.get("algo")]
+    agora = None  # como a Binance: sem janela, só as ordens dos últimos 7 dias
 
-    def ordens_algo(self, s):
-        return [o for o in self.ords if o["symbol"] == s and o.get("algo")]
+    def _janela(self, lista, inicio, fim):
+        if inicio is None:
+            if self.agora is None:
+                return lista
+            return [o for o in lista if self.agora - o["updateTime"] <= 7 * 86400_000]
+        return [o for o in lista if inicio <= o["updateTime"] <= fim]
+
+    def ordens(self, s, inicio=None, fim=None):
+        return self._janela([o for o in self.ords if o["symbol"] == s and not o.get("algo")], inicio, fim)
+
+    def ordens_algo(self, s, inicio=None, fim=None):
+        return self._janela([o for o in self.ords if o["symbol"] == s and o.get("algo")], inicio, fim)
 
     def por_papel(self, sid):
         return {p: o for p in ex.PAPEIS for o in self.ords if o["clientOrderId"] == ex.cid(sid, p)}
@@ -700,6 +727,31 @@ class TestExecutorBinance(unittest.TestCase):
         rel = ex.executar([sinal_ex()], c, False, False, self.agora)
         self.assertEqual(c.ords, [])
         self.assertIn("perda realizada", rel["ignorados"][0]["motivo"])
+
+    def test_prazo_de_7_dias_funciona_mesmo_com_historico_limitado(self):
+        # a entrada tem mais de 7 dias: a consulta padrão não a devolve, a janela do sinal sim
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        c.agora = T0 + 8 * 24 * HORA
+        rel = ex.executar([sinal_ex()], c, False, False, c.agora)
+        o = c.por_papel("f20261125-1700-btc")
+        self.assertIn("x", o)  # saída no prazo
+        self.assertEqual(o["x"]["type"], "MARKET")
+        self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
+
+    def test_nao_corre_atras_do_preco(self):
+        # entrada 100, alvo 1 115: com o preço a 108 já andou mais da metade do caminho
+        c = CorretoraFalsa(preco=108.0)
+        rel = ex.executar([sinal_ex()], c, False, False, self.agora)
+        self.assertEqual(c.ords, [])
+        self.assertIn("correr atrás", rel["ignorados"][0]["motivo"])
+        c = CorretoraFalsa(preco=106.0)  # menos da metade: entra
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        self.assertTrue(c.ords)
+        # condicional não tem essa trava: a entrada é limitada no preço do sinal
+        c = CorretoraFalsa(preco=108.0)
+        ex.executar([sinal_ex(tipo="condicional", status="aguardando")], c, False, False, self.agora)
+        self.assertTrue(c.ords)
 
     def test_sinal_antigo_nao_abre(self):
         c = CorretoraFalsa()

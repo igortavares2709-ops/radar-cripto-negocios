@@ -50,6 +50,7 @@ MAX_NOVAS_POR_EXECUCAO = 4
 MAX_ABERTAS = 8
 PERDA_DIARIA_MAX_PCT = 3.0
 JANELA_NOVO_H = 6          # só abre sinais publicados há menos disso
+ANDOU_MAX_ATE_ALVO1 = 0.5  # imediato: não entra se o preço já fez mais que isso do caminho entrada -> alvo 1
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
 PREFIXO = "rd-"
@@ -128,8 +129,9 @@ class ClienteBinance:
     def preco(self, simbolo: str) -> float:
         return float(self._req("GET", "/fapi/v1/ticker/price", {"symbol": simbolo})["price"])
 
-    def ordens(self, simbolo: str) -> List[dict]:
-        return self._req("GET", "/fapi/v1/allOrders", {"symbol": simbolo, "limit": 200}, assinado=True)
+    def ordens(self, simbolo: str, inicio: Optional[int] = None, fim: Optional[int] = None) -> List[dict]:
+        """Ordens comuns. Sem janela, a Binance devolve só as dos últimos 7 dias."""
+        return self._req("GET", "/fapi/v1/allOrders", {"symbol": simbolo, "limit": 500, "startTime": inicio, "endTime": fim}, assinado=True)
 
     def alavancagem(self, simbolo: str, x: int):
         return self._req("POST", "/fapi/v1/leverage", {"symbol": simbolo, "leverage": x}, assinado=True)
@@ -146,10 +148,10 @@ class ClienteBinance:
     def cancelar_algo(self, simbolo: str, client_algo_id: str):
         return self._req("DELETE", "/fapi/v1/algoOrder", {"clientAlgoId": client_algo_id}, assinado=True)
 
-    def ordens_algo(self, simbolo: str) -> List[dict]:
-        """Ordens algo dos últimos 7 dias, no formato das comuns (clientOrderId, status, executedQty)."""
+    def ordens_algo(self, simbolo: str, inicio: Optional[int] = None, fim: Optional[int] = None) -> List[dict]:
+        """Ordens algo (sem janela, só as dos últimos 7 dias), no formato das comuns (clientOrderId, status, executedQty)."""
         out = []
-        for o in self._req("GET", "/fapi/v1/allAlgoOrders", {"symbol": simbolo}, assinado=True):
+        for o in self._req("GET", "/fapi/v1/allAlgoOrders", {"symbol": simbolo, "limit": 100, "startTime": inicio, "endTime": fim}, assinado=True):
             out.append(dict(o, clientOrderId=o.get("clientAlgoId"), status=ESTADO_ALGO.get(o.get("algoStatus"), o.get("algoStatus")),
                             type=o.get("orderType"), updateTime=o.get("updateTime") or o.get("createTime") or 0, algo=True))
         return out
@@ -209,6 +211,8 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     if (preco - a1) * sgn >= 0:
         return {"pular": f"o preço ({preco}) já passou do alvo 1"}
     imediato = s.get("tipo") == "imediato"
+    if imediato and (preco - e) * sgn > ANDOU_MAX_ATE_ALVO1 * (a1 - e) * sgn:
+        return {"pular": f"o preço ({preco}) já andou mais da metade do caminho até o alvo 1: entrar agora seria correr atrás"}
     ref = preco if imediato else e
     dist = abs(ref - st)
     risco_usd = saldo * RISCO_PCT / 100
@@ -347,12 +351,28 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
     posicoes = cli.posicoes()
     rel["posicoes"] = [{"simbolo": k, "quantidade": float(p["positionAmt"]), "entrada": float(p.get("entryPrice", 0)),
                         "pnl_aberto": round(float(p.get("unRealizedProfit", 0)), 2)} for k, p in posicoes.items()]
-    ordens_cache: Dict[str, List[dict]] = {}
+    ordens_cache: Dict[tuple, List[dict]] = {}
+    SETE_DIAS = 7 * 86400_000 - 1
 
-    def ordens_de(sim):
-        if sim not in ordens_cache:
-            ordens_cache[sim] = cli.ordens(sim) + cli.ordens_algo(sim)
-        return ordens_cache[sim]
+    def buscar(sim, inicio=None, fim=None):
+        chave = (sim, inicio, fim)
+        if chave not in ordens_cache:
+            ordens_cache[chave] = cli.ordens(sim, inicio, fim) + cli.ordens_algo(sim, inicio, fim)
+        return ordens_cache[chave]
+
+    def ordens_de(sim, sinal=None):
+        """As ordens recentes (últimos 7 dias) e, para um sinal, também as da semana em que ele saiu:
+        a Binance só devolve 7 dias por consulta, e a entrada de um trade perto do prazo já passou disso."""
+        lista = list(buscar(sim))
+        if sinal is not None:
+            try:
+                ini = ms(sinal["at"]) - 3600_000
+            except Exception:
+                ini = None
+            if ini is not None and agora_ms - ini > SETE_DIAS:
+                vistos = {o.get("clientOrderId") for o in lista}
+                lista += [o for o in buscar(sim, ini, min(ini + SETE_DIAS, agora_ms)) if o.get("clientOrderId") not in vistos]
+        return lista
 
     # 1) administrar o que já foi aberto (sinais com ordens nossas)
     ocupados = set(posicoes)
@@ -361,7 +381,7 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
             continue
         sim = simbolo_de(s["ativo"])
         try:
-            ords = ordens_do_sinal(ordens_de(sim), s["id"])
+            ords = ordens_do_sinal(ordens_de(sim, s), s["id"])
         except BinanceErro as e:
             rel["erros"].append(f"{s['id']}: {e}")
             continue
@@ -435,8 +455,8 @@ class SemCorretora:
     def saldo_usdt(self): return 10000.0
     def pnl_realizado_hoje(self): return 0.0
     def posicoes(self): return {}
-    def ordens(self, simbolo): return []
-    def ordens_algo(self, simbolo): return []
+    def ordens(self, simbolo, inicio=None, fim=None): return []
+    def ordens_algo(self, simbolo, inicio=None, fim=None): return []
     def preco(self, simbolo): return self.pub.preco(simbolo)
 
 

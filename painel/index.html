@@ -1822,6 +1822,8 @@ dash.calc('vivo_agora', {
     return (posicoes || []).map((p) => {
       const vivo = p.cg_id ? porId.get(p.cg_id) : undefined;
       if (typeof vivo !== 'number' || !(vivo > 0)) return {...p, ao_vivo: false};
+      // rede de segurança: preço ao vivo mais de 25% longe do da conferência é de outra moeda ou está errado
+      if (typeof p.preco === 'number' && p.preco > 0 && Math.abs(vivo / p.preco - 1) > 0.25) return {...p, ao_vivo: false};
       const sgn = p.direcao === 'LONG' ? 1 : -1, risco = Math.abs(p.entrada - p.stop);
       const o = {...p, ao_vivo: true, preco: vivo, preco_conferencia: p.preco};
       if (p.status === 'aguardando') {
