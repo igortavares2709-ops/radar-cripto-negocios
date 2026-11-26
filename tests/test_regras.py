@@ -555,7 +555,7 @@ class CorretoraFalsa:
 
     def sincronizar_relogio(self): pass
     def modo_hedge(self): return self.hedge
-    def regras(self): return {s: {"tick": "0.1", "step": "0.001", "min_qtd": "0.001", "min_nocional": "5"} for s in self.simbolos}
+    def regras(self): return {s: {"tick": "0.1", "step": "0.001", "min_qtd": "0.001", "min_nocional": "5", "max_qtd": self.max_qtd} for s in self.simbolos}
     def saldo_usdt(self): return 2000.0
     def pnl_realizado_hoje(self): return self.pnl
     def posicoes(self): return {k: {"positionAmt": str(v), "entryPrice": "100", "unRealizedProfit": "0"} for k, v in self.pos.items() if v}
@@ -579,7 +579,12 @@ class CorretoraFalsa:
         self.canceladas.append(c)
 
     # ordens algo (stop e alvos): ficam na mesma lista, marcadas como algo
+    recusar_stop = False
+    max_qtd = None
+
     def enviar_algo(self, o):
+        if self.recusar_stop and o["type"] == "STOP_MARKET":
+            raise ex.BinanceErro(-4005, "Quantity greater than max quantity.")
         self.t += 1
         reg = dict(o, clientOrderId=o["clientAlgoId"], status="NEW", executedQty="0", updateTime=T0 + self.t, algo=True)
         self.ords.append(reg)
@@ -778,6 +783,27 @@ class TestExecutorBinance(unittest.TestCase):
         ex.executar([s], c, False, False, T0 + 100 * HORA)
         rel = ex.executar([s], c, False, False, T0 + 7 * 24 * HORA + 2 * HORA)
         self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
+
+    def test_quantidade_respeita_o_teto_da_corretora(self):
+        c = CorretoraFalsa()
+        c.max_qtd = 1.5
+        ex.executar([sinal_ex()], c, False, False, self.agora)
+        o = c.por_papel("f20261125-1700-btc")
+        self.assertEqual((o["e"]["quantity"], o["s"]["quantity"]), ("1.500", "1.500"))
+
+    def test_stop_recusado_nao_deixa_posicao_sem_protecao(self):
+        c = CorretoraFalsa()
+        c.recusar_stop = True
+        rel = ex.executar([sinal_ex()], c, False, False, self.agora)   # imediato: sai pelo preço
+        self.assertEqual(c.pos.get("BTCUSDT"), 0)
+        self.assertIn("x", c.por_papel("f20261125-1700-btc"))
+        self.assertTrue(rel["erros"])
+        c = CorretoraFalsa(preco=105.0)
+        c.recusar_stop = True
+        s = sinal_ex(tipo="condicional", status="aguardando")
+        ex.executar([s], c, False, False, self.agora)                   # condicional: cancela a entrada
+        self.assertEqual({o["status"] for o in c.ords}, {"CANCELED"})
+        self.assertEqual(len(c.ords), 1)  # nem chegou a mandar os alvos
 
     def test_entrada_pendente_cancela_se_o_sinal_encerrou_no_painel(self):
         c = CorretoraFalsa(preco=105.0)

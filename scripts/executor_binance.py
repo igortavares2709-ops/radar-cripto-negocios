@@ -104,8 +104,11 @@ class ClienteBinance:
             if s.get("contractType") != "PERPETUAL" or s.get("quoteAsset") != "USDT" or s.get("status") != "TRADING":
                 continue
             f = {x["filterType"]: x for x in s["filters"]}
+            # stop e alvos disparam ordens a mercado: valem os dois tetos (LOT_SIZE e MARKET_LOT_SIZE)
+            tetos = [float(f[k]["maxQty"]) for k in ("LOT_SIZE", "MARKET_LOT_SIZE") if float(f.get(k, {}).get("maxQty") or 0) > 0]
             out[s["symbol"]] = {"tick": f["PRICE_FILTER"]["tickSize"], "step": f["LOT_SIZE"]["stepSize"],
-                                "min_qtd": f["LOT_SIZE"]["minQty"], "min_nocional": f.get("MIN_NOTIONAL", {}).get("notional", "5")}
+                                "min_qtd": f["LOT_SIZE"]["minQty"], "min_nocional": f.get("MIN_NOTIONAL", {}).get("notional", "5"),
+                                "max_qtd": min(tetos) if tetos else None}
         return out
 
     def modo_hedge(self) -> bool:
@@ -219,6 +222,8 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     alav = max(1, min(ALAV_MAX, int(numero(s.get("alavancagem_max") or ALAV_MAX))))
     qtd = risco_usd / dist
     qtd = min(qtd, saldo * alav * 0.9 / ref)  # cabe na margem com a alavancagem escolhida
+    if r.get("max_qtd"):
+        qtd = min(qtd, float(r["max_qtd"]))  # teto da corretora por ordem (o risco fica menor que 1%)
     q = arred_qtd(qtd, r["step"])
     if Decimal(q) < Decimal(r["min_qtd"]) or Decimal(q) * Decimal(str(ref)) < Decimal(r["min_nocional"]):
         return {"pular": "tamanho abaixo do mínimo da corretora para 1% de risco"}
@@ -403,6 +408,18 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
         for a in acoes_de_gestao(s, ords, pos, regras[sim], agora_ms):
             fazer(a, s["id"])
 
+    def desfazer_sem_stop(s, sim, qtd, entrada, enviadas):
+        """O stop foi recusado: nenhuma posição pode ficar sem ele. Cancela o que foi posto e,
+        se a entrada já executou (a mercado), zera a posição pelo preço."""
+        for o in enviadas[1:]:
+            fazer({"cancelar": o["clientAlgoId"], "simbolo": sim, "algo": True, "motivo": "stop recusado: desfazendo"}, s["id"])
+        if entrada["type"] == "MARKET":
+            contra = "BUY" if entrada["side"] == "SELL" else "SELL"
+            fazer({"enviar": {"symbol": sim, "side": contra, "type": "MARKET", "reduceOnly": "true", "quantity": qtd,
+                              "newClientOrderId": cid(s["id"], "x")}, "algo": False, "motivo": "stop recusado: saindo da posição"}, s["id"])
+        else:
+            fazer({"cancelar": entrada["newClientOrderId"], "simbolo": sim, "algo": False, "motivo": "stop recusado: cancelando a entrada"}, s["id"])
+
     # 2) abrir os novos
     if pausado:
         rel["ignorados"].append({"sinal": "-", "motivo": "executor pausado: nenhum trade novo"})
@@ -442,11 +459,17 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
             except BinanceErro as e:
                 rel["erros"].append(f"{s['id']}: alavancagem: {e}")
                 continue
+        enviadas = []
         for i, o in enumerate(plano["ordens"]):
             risco_txt = f"{plano['risco_usd']:.2f}".replace(".", ",")
             fazer({"enviar": o, "algo": i > 0, "motivo": ("abertura" if i == 0 else "proteção") + f" (risco US$ {risco_txt}, {plano['alavancagem']}x)"}, s["id"])
-            if i == 0 and rel["acoes"][-1].get("erro"):
+            erro = rel["acoes"][-1].get("erro")
+            if i == 0 and erro:
                 break  # entrada recusada: não manda a proteção
+            if i == 1 and erro and not simular:
+                desfazer_sem_stop(s, sim, o["quantity"], plano["ordens"][0], enviadas)
+                break
+            enviadas.append(o)
         ocupados.add(sim)
         novas += 1
     return rel
