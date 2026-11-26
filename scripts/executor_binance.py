@@ -12,8 +12,10 @@ testnet: https://testnet.binancefuture.com). Sem elas, roda em simulação.
 O que faz em cada execução:
 - Abre os sinais LONG/SHORT ainda válidos ("aguardando" ou "aberto"), novos e antigos, os mais novos primeiro:
   entrada a mercado (imediato) ou limitada (condicional) e, junto, a proteção: stop da posição inteira,
-  metade no alvo 1 e metade no alvo 2. Tamanho: 1% do saldo de risco até o stop, como a carteira
-  fictícia; alavancagem a do sinal (5x se o sinal não disser).
+  metade no alvo 1 e metade no alvo 2. Tamanho igual ao da gestão dos analistas (a carteira fictícia,
+  --carteira): o mesmo valor em risco da carteira (1% do saldo dela) e posição de no máximo 5x o saldo
+  dela. Sem --carteira, 1% do saldo do testnet. Na corretora a alavancagem fica em 10x só para prender
+  menos margem: ela não muda tamanho, stop nem risco (a conta é em margem cruzada).
 - A Binance só aceita stop e alvo pela API de ordens algo (POST /fapi/v1/algoOrder, algoType
   CONDITIONAL), e "fechar posição" só com posição aberta; por isso a proteção vai com quantidade e
   "só reduzir" (reduceOnly), o que vale antes de a entrada condicional executar.
@@ -48,6 +50,8 @@ from radar_comum import FINAIS, carregar_sinais, iso, ms, numero
 BASES_TESTNET = ("https://testnet.binancefuture.com",)  # a Demo Trading (demo-fapi) também bloqueia estes servidores (HTTP 451)
 RISCO_PCT = 1.0
 ALAV_PADRAO = 5           # quando o sinal não traz alavancagem_max
+ALAV_MARGEM = 10          # alavancagem posta na corretora: só define a margem presa, não o tamanho
+TAMANHO_MAX_X_SALDO = 5   # como a carteira fictícia: posição de no máximo 5x o saldo
 GATILHO_MAX_H = 48         # entrada condicional não executada é cancelada depois disso
 OPERACAO_MAX_H = 7 * 24
 PREFIXO = "rd-"
@@ -199,8 +203,9 @@ def sinais_para_abrir(sinais: List[dict], agora_ms: int) -> List[dict]:
     return sorted(out, key=lambda s: str(s.get("at")), reverse=True)
 
 
-def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
-    """Ordens de abertura de um sinal, ou {"pular": motivo}."""
+def planejar_entrada(s: dict, r: dict, saldo: float, preco: float, gestao: Optional[dict] = None) -> dict:
+    """Ordens de abertura de um sinal, ou {"pular": motivo}. `gestao` é a carteira dos analistas
+    ({"saldo": saldo dela, "risco": {id: risco em US$ já fixado}}): o tamanho segue o dela."""
     try:
         e, st, a1, a2 = (numero(s[k]) for k in ("entrada", "stop", "alvo1", "alvo2"))
     except Exception:
@@ -215,10 +220,14 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     imediato = s.get("tipo") == "imediato"
     ref = preco if imediato else e
     dist = abs(ref - st)
-    risco_usd = saldo * RISCO_PCT / 100
+    base = float(gestao["saldo"]) if gestao and gestao.get("saldo") else saldo
+    risco_usd = float((gestao or {}).get("risco", {}).get(s["id"]) or base * RISCO_PCT / 100)
     alav = max(1, int(numero(s.get("alavancagem_max") or ALAV_PADRAO)))
     qtd = risco_usd / dist
-    qtd = min(qtd, saldo * alav * 0.9 / ref)  # cabe na margem com a alavancagem escolhida
+    if qtd * ref > TAMANHO_MAX_X_SALDO * base:  # a carteira limita a posição a 5x o saldo e reduz o risco
+        qtd = TAMANHO_MAX_X_SALDO * base / ref
+        risco_usd = qtd * dist
+    qtd = min(qtd, saldo * ALAV_MARGEM * 0.9 / ref)  # cabe na margem da conta
     if r.get("max_qtd"):
         qtd = min(qtd, float(r["max_qtd"]))  # teto da corretora por ordem (o risco fica menor que 1%)
     q = arred_qtd(qtd, r["step"])
@@ -243,7 +252,7 @@ def planejar_entrada(s: dict, r: dict, saldo: float, preco: float) -> dict:
     if metade != "0":
         protecao.append(prot("t1", "TAKE_PROFIT_MARKET", a1, metade))
     protecao.append(prot("t2", "TAKE_PROFIT_MARKET", a2, resto))
-    return {"simbolo": sim, "alavancagem": alav, "quantidade": q, "risco_usd": round(risco_usd, 2),
+    return {"simbolo": sim, "alavancagem": alav, "quantidade": q, "risco_usd": round(float(q) * dist, 2),
             "ordens": [entrada] + protecao}
 
 
@@ -335,7 +344,8 @@ def acoes_de_gestao(s: dict, ords: Dict[str, dict], pos_qtd: float, r: dict, ago
 
 # ---------------------------------------------------------------- execução
 
-def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Optional[int] = None) -> dict:
+def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Optional[int] = None,
+             gestao: Optional[dict] = None) -> dict:
     agora_ms = agora_ms or int(time.time() * 1000)
     rel = {"at": iso(agora_ms), "base": getattr(cli, "base", "simulação"), "simulacao": simular, "pausado": pausado,
            "acoes": [], "ignorados": [], "erros": [], "posicoes": []}
@@ -413,6 +423,24 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
         for a in acoes_de_gestao(s, ords, pos, regras[sim], agora_ms):
             fazer(a, s["id"])
 
+    def por_alavancagem(sim) -> bool:
+        """Põe a alavancagem de margem no símbolo (se o símbolo não aceitar 10x, tenta menos)."""
+        ultimo = None
+        for x in (ALAV_MARGEM, 5, 3, 2, 1):
+            try:
+                cli.alavancagem(sim, x)
+                return True
+            except BinanceErro as e:
+                ultimo = e
+        rel["erros"].append(f"{sim}: alavancagem: {ultimo}")
+        return False
+
+    # margem: os símbolos que já operam também ficam com a alavancagem de margem (libera margem para os próximos)
+    if not simular:
+        for sim in sorted(ocupados):
+            if int(float(posicoes.get(sim, {}).get("leverage") or 0)) != ALAV_MARGEM:
+                por_alavancagem(sim)
+
     def desfazer_sem_stop(s, sim, qtd, entrada, enviadas):
         """O stop foi recusado: nenhuma posição pode ficar sem ele. Cancela o que foi posto e,
         se a entrada já executou (a mercado), zera a posição pelo preço."""
@@ -441,23 +469,19 @@ def executar(sinais: List[dict], cli, simular: bool, pausado: bool, agora_ms: Op
             rel["ignorados"].append({"sinal": s["id"], "motivo": f"{sim} já tem posição ou ordens abertas"})
             continue
         try:
-            plano = planejar_entrada(s, regras[sim], saldo, cli.preco(sim))
+            plano = planejar_entrada(s, regras[sim], saldo, cli.preco(sim), gestao)
         except BinanceErro as e:
             rel["erros"].append(f"{s['id']}: {e}")
             continue
         if "pular" in plano:
             rel["ignorados"].append({"sinal": s["id"], "motivo": plano["pular"]})
             continue
-        if not simular:
-            try:
-                cli.alavancagem(sim, plano["alavancagem"])
-            except BinanceErro as e:
-                rel["erros"].append(f"{s['id']}: alavancagem: {e}")
-                continue
+        if not simular and not por_alavancagem(sim):
+            continue
         enviadas = []
         for i, o in enumerate(plano["ordens"]):
             risco_txt = f"{plano['risco_usd']:.2f}".replace(".", ",")
-            fazer({"enviar": o, "algo": i > 0, "motivo": ("abertura" if i == 0 else "proteção") + f" (risco US$ {risco_txt}, {plano['alavancagem']}x)"}, s["id"])
+            fazer({"enviar": o, "algo": i > 0, "motivo": ("abertura" if i == 0 else "proteção") + f" (risco US$ {risco_txt}, sinal {plano['alavancagem']}x)"}, s["id"])
             erro = rel["acoes"][-1].get("erro")
             if i == 0 and erro:
                 break  # entrada recusada: não manda a proteção
@@ -487,11 +511,25 @@ class SemCorretora:
     def preco(self, simbolo): return self.pub.preco(simbolo)
 
 
+def ler_gestao(caminho: Optional[str]) -> Optional[dict]:
+    """Da carteira fictícia: o saldo e o risco em US$ que ela fixou para cada operação aberta."""
+    if not caminho:
+        return None
+    try:
+        with open(caminho) as f:
+            c = json.load(f)
+        abertas = json.loads(c.get("abertas_json") or "[]")
+        return {"saldo": float(c["saldo"]), "risco": {o["id"]: float(o["risco_usd"]) for o in abertas if o.get("risco_usd")}}
+    except Exception:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sinais")
     ap.add_argument("--avaliacao", help="conferência mais recente (saída --avaliacao do monitor.py)")
     ap.add_argument("--simular", action="store_true", help="mostra o que faria, sem enviar ordens")
+    ap.add_argument("--carteira", help="carteira fictícia dos analistas (saída --carteira do monitor.py): o tamanho segue o dela")
     ap.add_argument("--pausado", action="store_true", help="não abre trades novos; só administra os abertos")
     a = ap.parse_args()
     chave, segredo = os.environ.get("BINANCE_TESTNET_API_KEY"), os.environ.get("BINANCE_TESTNET_API_SECRET")
@@ -507,7 +545,7 @@ def main():
             aval = json.load(f)
         sinais = [dict(x, **aval.get(x.get("id"), {})) for x in sinais]
     try:
-        rel = executar(sinais, cli, simular, a.pausado)
+        rel = executar(sinais, cli, simular, a.pausado, gestao=ler_gestao(a.carteira))
     except (BinanceErro, urllib.error.URLError, OSError) as e:
         rel = {"at": iso(int(time.time() * 1000)), "erros": [f"falha de comunicação com o testnet: {e}"], "acoes": [], "ignorados": []}
     if not (chave and segredo):

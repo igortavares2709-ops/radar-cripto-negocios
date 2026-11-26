@@ -645,7 +645,7 @@ class TestExecutorBinance(unittest.TestCase):
         self.assertEqual((o["t2"]["type"], o["t2"]["triggerPrice"], o["t2"]["quantity"]), ("TAKE_PROFIT_MARKET", "130.0", "1.000"))
         self.assertTrue(all(o[p].get("algo") for p in ("s", "t1", "t2")))
         self.assertNotIn("closePosition", o["s"])
-        self.assertEqual(c.lev["BTCUSDT"], 5)
+        self.assertEqual(c.lev["BTCUSDT"], 10)   # na corretora, 10x só de margem
         self.assertEqual(rel["erros"], [])
 
     def test_rodar_de_novo_nao_duplica(self):
@@ -789,6 +789,26 @@ class TestExecutorBinance(unittest.TestCase):
         ex.executar([s], c, False, False, T0 + 100 * HORA)
         rel = ex.executar([s], c, False, False, T0 + 7 * 24 * HORA + 2 * HORA)
         self.assertTrue(any("prazo de 7 dias" in a["motivo"] for a in rel["acoes"]))
+
+    def test_tamanho_segue_a_carteira_dos_analistas(self):
+        # carteira com US$ 2.064: 1% = US$ 20,64 de risco; stop a 10 de distância -> 2,064 unidades
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora, gestao={"saldo": 2064.0, "risco": {}})
+        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "2.064")
+        # operação que a carteira já abriu: o mesmo risco em US$ que ela fixou
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex()], c, False, False, self.agora, gestao={"saldo": 2064.0, "risco": {"f20261125-1700-btc": 15.0}})
+        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "1.500")
+        # posição limitada a 5x o saldo da carteira (stop muito perto)
+        c = CorretoraFalsa()
+        ex.executar([sinal_ex(stop=99.9)], c, False, False, self.agora, gestao={"saldo": 2000.0, "risco": {}})
+        self.assertEqual(c.por_papel("f20261125-1700-btc")["e"]["quantity"], "100.000")   # US$ 10.000 = 5x
+        # o arquivo da carteira
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"saldo": 2064.1, "abertas_json": json.dumps([{"id": "x", "risco_usd": 20.5}])}, f)
+        self.assertEqual(ex.ler_gestao(f.name), {"saldo": 2064.1, "risco": {"x": 20.5}})
+        os.unlink(f.name)
+        self.assertIsNone(ex.ler_gestao(None))
 
     def test_quantidade_respeita_o_teto_da_corretora(self):
         c = CorretoraFalsa()
